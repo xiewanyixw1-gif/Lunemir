@@ -25,6 +25,25 @@ export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(cjk * 1.15 + other / 4));
 }
 
+export function resolvePresetPrompts(preset?: PresetRecord | null) {
+  if (!preset) return { systemPrompt: "", postHistoryInstructions: "", activeModuleCount: 0 };
+  if (!Array.isArray(preset.modules)) {
+    return {
+      systemPrompt: preset.systemPrompt,
+      postHistoryInstructions: preset.postHistoryInstructions,
+      activeModuleCount: [preset.systemPrompt, preset.postHistoryInstructions].filter(Boolean).length,
+    };
+  }
+  const activeModules = preset.modules
+    .filter((module) => module.enabled && module.content.trim())
+    .sort((left, right) => right.priority - left.priority || left.order - right.order);
+  return {
+    systemPrompt: activeModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
+    postHistoryInstructions: activeModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+    activeModuleCount: activeModules.length,
+  };
+}
+
 function matchesLore(entries: LorebookEntry[], transcript: string): MatchedLore[] {
   return entries
     .filter((entry) => entry.enabled)
@@ -77,10 +96,12 @@ export function compileContext(
   const personaDefinition = persona
     ? `与您互动的用户人设是 ${persona.name}。\n${replaceMacros(persona.description)}`
     : "";
-  const presetPrompt = preset ? replaceMacros(preset.systemPrompt) : "";
+  const resolvedPreset = resolvePresetPrompts(preset);
+  const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
+  const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
   const loreText = matchedLore.map(({ entry }) => `[${entry.name}]\n${entry.content}`).join("\n\n");
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${memory}`).join("\n");
-  const postHistory = [preset?.postHistoryInstructions, character.postHistoryInstructions]
+  const postHistory = [presetPostHistory, character.postHistoryInstructions]
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
@@ -101,11 +122,11 @@ export function compileContext(
       detail: persona?.name ?? "用户",
       estimatedTokens: estimateTokens(personaDefinition),
     }] : []),
-    ...(presetPrompt ? [{
+    ...(presetPrompt || presetPostHistory ? [{
       id: "preset",
       label: "提示词预设",
-      detail: preset?.name ?? "Preset",
-      estimatedTokens: estimateTokens(presetPrompt),
+      detail: `${preset?.name ?? "Preset"} · ${resolvedPreset.activeModuleCount} 个模块`,
+      estimatedTokens: estimateTokens([presetPrompt, presetPostHistory].filter(Boolean).join("\n\n")),
     }] : []),
     ...(loreText ? [{
       id: "lore",

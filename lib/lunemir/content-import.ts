@@ -56,24 +56,37 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
   const prompts = Array.isArray(raw.prompts) ? raw.prompts.map(asRecord) : [];
   const orderGroups = Array.isArray(raw.prompt_order) ? raw.prompt_order.map(asRecord) : [];
   const preferredOrder = orderGroups.find((group) => group.character_id === 100001) ?? orderGroups[0];
-  const enabledOrder = new Map(
-    (Array.isArray(preferredOrder?.order) ? preferredOrder.order : [])
-      .map(asRecord)
-      .map((entry) => [asString(entry.identifier), entry.enabled !== false]),
-  );
-  const enabledPrompts = prompts.filter((prompt) => {
-    const identifier = asString(prompt.identifier);
-    return prompt.marker !== true
-      && asString(prompt.content).trim()
-      && enabledOrder.get(identifier) !== false;
-  });
+  const orderEntries = (Array.isArray(preferredOrder?.order) ? preferredOrder.order : []).map(asRecord);
+  const orderByIdentifier = new Map(orderEntries.map((entry, index) => [asString(entry.identifier), {
+    enabled: entry.enabled !== false,
+    order: index,
+  }]));
+  const modules = prompts
+    .filter((prompt) => prompt.marker !== true && asString(prompt.content).trim())
+    .map((prompt, index) => {
+      const identifier = asString(prompt.identifier);
+      const orderEntry = orderByIdentifier.get(identifier);
+      return {
+        id: identifier ? `${identifier}_${index}` : createId("prompt"),
+        name: asString(prompt.name) || identifier || `提示词 ${index + 1}`,
+        content: asString(prompt.content).trim(),
+        enabled: orderEntry?.enabled ?? true,
+        position: identifier === "jailbreak" || asString(prompt.lunemir_position) === "post_history"
+          ? "post_history" as const
+          : "system" as const,
+        priority: asNumber(prompt.priority) ?? 0,
+        order: orderEntry?.order ?? orderEntries.length + index,
+      };
+    })
+    .sort((left, right) => left.order - right.order);
+  const enabledPrompts = modules.filter((module) => module.enabled);
   const postHistoryInstructions = enabledPrompts
-    .filter((prompt) => asString(prompt.identifier) === "jailbreak")
-    .map((prompt) => asString(prompt.content))
+    .filter((module) => module.position === "post_history")
+    .map((module) => module.content)
     .join("\n\n");
   const systemPrompt = enabledPrompts
-    .filter((prompt) => asString(prompt.identifier) !== "jailbreak")
-    .map((prompt) => asString(prompt.content))
+    .filter((module) => module.position === "system")
+    .map((module) => module.content)
     .join("\n\n");
   const temperature = asNumber(raw.temperature);
   const maxTokens = asNumber(raw.openai_max_tokens ?? raw.max_tokens);
@@ -83,7 +96,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(contextLimit !== undefined ? { contextLimit } : {}),
   };
-  if (!systemPrompt && Object.keys(modelPatch).length === 0) {
+  if (modules.length === 0 && Object.keys(modelPatch).length === 0) {
     throw new Error("没有在预设中找到提示词或支持的采样参数。");
   }
   const now = new Date().toISOString();
@@ -94,6 +107,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     sourceName,
     systemPrompt,
     postHistoryInstructions,
+    modules,
     modelPatch,
     raw,
     createdAt: now,
@@ -104,7 +118,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     record,
     warnings: prompts.length === 0 ? ["该预设没有 prompts 数组，仅会应用采样参数。"] : [],
     detectedFormat: "CHAT PRESET · JSON",
-    summary: `${enabledPrompts.length} 段提示词 · ${Object.keys(modelPatch).length} 个模型参数`,
+    summary: `${enabledPrompts.length}/${modules.length} 段提示词启用 · ${Object.keys(modelPatch).length} 个模型参数`,
   };
 }
 

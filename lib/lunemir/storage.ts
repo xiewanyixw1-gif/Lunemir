@@ -147,6 +147,10 @@ export function savePreset(preset: PresetRecord) {
   return put(PRESET_STORE, preset);
 }
 
+export function deletePreset(presetId: string) {
+  return remove(PRESET_STORE, presetId);
+}
+
 export async function listConversations(characterId: string) {
   const database = await openLunemirDatabase();
   const transaction = database.transaction(CONVERSATION_STORE, "readonly");

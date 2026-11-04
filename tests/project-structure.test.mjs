@@ -147,3 +147,26 @@ test("supports persistent visual lorebook management", async () => {
   assert.match(storage, /deleteLorebook/);
   assert.match(context, /right\.priority - left\.priority/);
 });
+
+test("supports visual prompt preset composition and conflict checks", async () => {
+  const [editor, runtime, storage, context, importer, presetLogic] = await Promise.all([
+    readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/preset.ts", root), "utf8"),
+  ]);
+  assert.match(editor, /创建新预设/);
+  assert.match(editor, /插入位置/);
+  assert.match(editor, /保存并应用/);
+  assert.match(runtime, /savePresetProfile/);
+  assert.match(runtime, /duplicatePreset/);
+  assert.match(runtime, /deletePresetProfile/);
+  assert.match(runtime, /downloadPreset/);
+  assert.match(storage, /deletePreset/);
+  assert.match(context, /resolvePresetPrompts/);
+  assert.match(importer, /lunemir_position/);
+  assert.match(presetLogic, /analyzePromptModules/);
+  assert.match(presetLogic, /第一人称/);
+});

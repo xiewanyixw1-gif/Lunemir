@@ -84,6 +84,16 @@ export type PersonaRecord = {
   updatedAt: string;
 };
 
+export type PromptModule = {
+  id: string;
+  name: string;
+  content: string;
+  enabled: boolean;
+  position: "system" | "post_history";
+  priority: number;
+  order: number;
+};
+
 export type PresetRecord = {
   id: string;
   schemaVersion: 1;
@@ -91,10 +101,15 @@ export type PresetRecord = {
   sourceName: string;
   systemPrompt: string;
   postHistoryInstructions: string;
+  modules?: PromptModule[];
   modelPatch: Partial<Pick<ModelConfig, "temperature" | "maxTokens" | "contextLimit">>;
   raw: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
+};
+
+export type PresetEditorValues = Pick<PresetRecord, "name" | "modelPatch"> & {
+  modules: PromptModule[];
 };
 
 export type StoredMessage = {

@@ -11,6 +11,7 @@ import {
   deleteCharacter as removeStoredCharacter,
   deleteConversation as removeStoredConversation,
   deleteLorebook as removeStoredLorebook,
+  deletePreset as removeStoredPreset,
   deleteStoryEvents,
   getSettings,
   listCharacters,
@@ -39,6 +40,7 @@ import type {
   LorebookRecord,
   ModelConfig,
   PersonaRecord,
+  PresetEditorValues,
   PresetRecord,
   StoredMessage,
   StoryEvent,
@@ -1065,8 +1067,7 @@ export function useLunemirRuntime() {
     if (activeCharacter) refreshContext(activeCharacter, messages);
   }
 
-  async function activatePreset(presetId: string) {
-    const preset = presets.find((item) => item.id === presetId) ?? null;
+  async function applyPresetRecord(preset: PresetRecord | null) {
     setActivePresetId(preset?.id ?? "");
     contextResourcesRef.current.preset = preset;
     const nextModel = preset ? { ...modelConfig, ...preset.modelPatch } : modelConfig;
@@ -1075,6 +1076,128 @@ export function useLunemirRuntime() {
     const settings = await getSettings();
     await saveSettings({ ...settings, activePresetId: preset?.id, model: nextModel, updatedAt: new Date().toISOString() });
     if (activeCharacter) refreshContext(activeCharacter, messages);
+  }
+
+  async function savePresetProfile(presetId: string | undefined, values: PresetEditorValues) {
+    const existing = presetId ? presets.find((preset) => preset.id === presetId) : undefined;
+    const now = new Date().toISOString();
+    const modules = values.modules.map((module, index) => ({
+      ...module,
+      id: module.id || createId("prompt"),
+      name: module.name.trim() || `提示词模块 ${index + 1}`,
+      content: module.content.trim(),
+      priority: Number.isFinite(module.priority) ? module.priority : 0,
+      order: index,
+    }));
+    if (!values.name.trim()) {
+      setRuntimeError("预设名称不能为空。");
+      return null;
+    }
+    if (modules.length === 0) {
+      setRuntimeError("预设至少需要一个提示词模块。");
+      return null;
+    }
+    const enabledModules = modules
+      .filter((module) => module.enabled && module.content)
+      .sort((left, right) => right.priority - left.priority || left.order - right.order);
+    const preset: PresetRecord = existing
+      ? {
+          ...existing,
+          name: values.name.trim(),
+          modules,
+          systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
+          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          modelPatch: { ...values.modelPatch },
+          updatedAt: now,
+        }
+      : {
+          id: createId("preset"),
+          schemaVersion: 1,
+          name: values.name.trim(),
+          sourceName: "Created in Lunemir",
+          modules,
+          systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
+          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          modelPatch: { ...values.modelPatch },
+          raw: {},
+          createdAt: now,
+          updatedAt: now,
+        };
+    await savePreset(preset);
+    setPresets(existing ? presets.map((item) => item.id === preset.id ? preset : item) : [preset, ...presets]);
+    await applyPresetRecord(preset);
+    return preset;
+  }
+
+  async function duplicatePreset(presetId: string) {
+    const source = presets.find((preset) => preset.id === presetId);
+    if (!source) return null;
+    const now = new Date().toISOString();
+    const duplicate: PresetRecord = {
+      ...source,
+      id: createId("preset"),
+      name: `${source.name} · 副本`,
+      sourceName: source.sourceName || source.name,
+      modules: source.modules?.map((module, index) => ({ ...module, id: createId("prompt"), order: index })),
+      modelPatch: { ...source.modelPatch },
+      raw: { ...source.raw },
+      createdAt: now,
+      updatedAt: now,
+    };
+    await savePreset(duplicate);
+    setPresets([duplicate, ...presets]);
+    await applyPresetRecord(duplicate);
+    return duplicate;
+  }
+
+  async function deletePresetProfile(presetId: string) {
+    const target = presets.find((preset) => preset.id === presetId);
+    if (!target) return false;
+    await removeStoredPreset(presetId);
+    setPresets(presets.filter((preset) => preset.id !== presetId));
+    if (activePresetId === presetId) await applyPresetRecord(null);
+    return true;
+  }
+
+  function downloadPreset(presetId: string) {
+    const preset = presets.find((item) => item.id === presetId);
+    if (!preset) return;
+    const modules = preset.modules ?? [
+      ...(preset.systemPrompt ? [{ id: "main", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, priority: 0, order: 0 }] : []),
+      ...(preset.postHistoryInstructions ? [{ id: "jailbreak", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, priority: 0, order: 1 }] : []),
+    ];
+    const ordered = [...modules].sort((left, right) => left.order - right.order);
+    const prompts = ordered.map((module) => ({
+      identifier: module.id,
+      name: module.name,
+      content: module.content,
+      role: "system",
+      system_prompt: module.position === "system",
+      lunemir_position: module.position,
+      marker: false,
+      priority: module.priority,
+    }));
+    const payload = {
+      ...preset.raw,
+      name: preset.name,
+      prompts,
+      prompt_order: [{ character_id: 100001, order: ordered.map((module) => ({ identifier: module.id, enabled: module.enabled })) }],
+      ...(preset.modelPatch.temperature !== undefined ? { temperature: preset.modelPatch.temperature } : {}),
+      ...(preset.modelPatch.maxTokens !== undefined ? { openai_max_tokens: preset.modelPatch.maxTokens } : {}),
+      ...(preset.modelPatch.contextLimit !== undefined ? { openai_max_context: preset.modelPatch.contextLimit } : {}),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${preset.name.replace(/[\\/:*?"<>|]/g, "-") || "lunemir-preset"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function activatePreset(presetId: string) {
+    const preset = presets.find((item) => item.id === presetId) ?? null;
+    await applyPresetRecord(preset);
   }
 
   async function saveModel() {
@@ -1232,6 +1355,10 @@ export function useLunemirRuntime() {
     downloadLorebook,
     savePersonaProfile,
     activatePreset,
+    savePresetProfile,
+    duplicatePreset,
+    deletePresetProfile,
+    downloadPreset,
     sendMessage,
     editMessage,
     deleteMessage,

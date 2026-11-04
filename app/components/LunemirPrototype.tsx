@@ -5,12 +5,14 @@ import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
+import { PresetEditorModal } from "./PresetEditorModal";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
 type DragTarget = "button" | "panel";
 type CharacterEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 type LorebookEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
+type PresetEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
@@ -55,6 +57,7 @@ export function LunemirPrototype() {
   const [contextOpen, setContextOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
+  const [presetEditor, setPresetEditor] = useState<PresetEditorTarget | null>(null);
   const [draft, setDraft] = useState("");
   const [personaName, setPersonaName] = useState("");
   const [personaDescription, setPersonaDescription] = useState("");
@@ -113,6 +116,10 @@ export function LunemirPrototype() {
   const editorLorebook = lorebookEditor?.mode === "edit"
     ? runtime.lorebooks.find((lorebook) => lorebook.id === lorebookEditor.id)
     : undefined;
+  const editorPreset = presetEditor?.mode === "edit"
+    ? runtime.presets.find((preset) => preset.id === presetEditor.id)
+    : undefined;
+  const activePresetId = runtime.activePreset?.id ?? "";
 
   useEffect(() => {
     if (section !== "chat" || !followOutputRef.current) return;
@@ -451,8 +458,8 @@ export function LunemirPrototype() {
               <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
             </div>
             <div className="data-card preset-card">
-              <div><span className="eyebrow">PROMPT PRESET</span><h3>提示词预设</h3><p>导入聊天预设会读取已启用的系统提示词，并应用 Temperature、输出长度和上下文窗口。</p></div>
-              <div><select value={runtime.activePreset?.id ?? ""} onChange={(event) => void runtime.activatePreset(event.target.value)} aria-label="选择提示词预设"><option value="">不使用预设</option>{runtime.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button onClick={() => setImportOpen(true)}>导入预设</button></div>
+              <div><span className="eyebrow">PROMPT PRESET</span><h3>提示词预设</h3><p>每个模块可以独立启停、排序和设置插入位置；启用预设时会同步应用其中的模型参数。</p></div>
+              <div className="preset-card-actions"><select value={activePresetId} onChange={(event) => void runtime.activatePreset(event.target.value)} aria-label="选择提示词预设"><option value="">不使用预设</option>{runtime.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select>{activePresetId && <button onClick={() => setPresetEditor({ mode: "edit", id: activePresetId })}>管理</button>}<button onClick={() => setPresetEditor({ mode: "create" })}>新建</button><button onClick={() => setImportOpen(true)}>导入</button></div>
             </div>
             <div className="data-card">
               <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天和设置保存在当前浏览器。导出备份后可以迁移到其他设备。</p></div>
@@ -629,6 +636,27 @@ export function LunemirPrototype() {
           onDelete={editorLorebook ? async () => {
             if (!window.confirm(`删除世界书“${editorLorebook.name}”？它会同时从所有角色的启用列表中移除。`)) return;
             if (await runtime.deleteLorebookProfile(editorLorebook.id)) setLorebookEditor(null);
+          } : undefined}
+        />
+      )}
+
+      {presetEditor && (
+        <PresetEditorModal
+          key={presetEditor.mode === "edit" ? presetEditor.id : "new-preset"}
+          preset={editorPreset}
+          onClose={() => setPresetEditor(null)}
+          onSave={async (values) => {
+            const saved = await runtime.savePresetProfile(presetEditor.mode === "edit" ? presetEditor.id : undefined, values);
+            if (saved) setPresetEditor(null);
+          }}
+          onDuplicate={editorPreset ? async () => {
+            const duplicate = await runtime.duplicatePreset(editorPreset.id);
+            if (duplicate) setPresetEditor({ mode: "edit", id: duplicate.id });
+          } : undefined}
+          onExport={editorPreset ? () => runtime.downloadPreset(editorPreset.id) : undefined}
+          onDelete={editorPreset ? async () => {
+            if (!window.confirm(`删除预设“${editorPreset.name}”？此操作不会删除角色或聊天记录。`)) return;
+            if (await runtime.deletePresetProfile(editorPreset.id)) setPresetEditor(null);
           } : undefined}
         />
       )}
