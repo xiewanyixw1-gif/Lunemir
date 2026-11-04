@@ -8,6 +8,7 @@ import type {
   PersonaRecord,
   PresetRecord,
   StoredMessage,
+  StoryEvent,
 } from "./types";
 
 export type ContextOptions = {
@@ -15,6 +16,7 @@ export type ContextOptions = {
   preset?: PresetRecord | null;
   externalLoreEntries?: LorebookEntry[];
   memories?: string[];
+  storyEvents?: StoryEvent[];
 };
 
 export function estimateTokens(text: string) {
@@ -57,8 +59,14 @@ export function compileContext(
     .replaceAll(/{{char}}/gi, character.name)
     .replaceAll(/{{user}}/gi, persona?.name || "用户");
   const transcript = messages.slice(-24).map((message) => message.content).join("\n");
+  const phoneEvents = (options.storyEvents ?? []).slice(-12);
+  const phoneText = phoneEvents.map((event) => {
+    const sender = event.actorId === character.id ? character.name : persona?.name || "用户";
+    const receiver = event.targetId === character.id ? character.name : persona?.name || "用户";
+    return `[${new Date(event.storyTime).toLocaleString("zh-CN")} · 手机] ${sender} → ${receiver}：${event.content}`;
+  }).join("\n");
   const allLoreEntries = [...character.lorebookEntries, ...(options.externalLoreEntries ?? [])];
-  const matchedLore = matchesLore(allLoreEntries, transcript);
+  const matchedLore = matchesLore(allLoreEntries, [transcript, phoneText].filter(Boolean).join("\n"));
   const characterDefinition = [
     `你正在扮演 ${character.name}。`,
     character.description,
@@ -76,7 +84,7 @@ export function compileContext(
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, characterDefinition, personaDefinition, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`]
+  const systemContent = [presetPrompt, characterDefinition, personaDefinition, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`]
     .filter(Boolean)
     .join("\n\n---\n\n");
 
@@ -110,6 +118,12 @@ export function compileContext(
       label: "长期记忆",
       detail: `${options.memories?.length ?? 0} 条已确认`,
       estimatedTokens: estimateTokens(memoryText),
+    }] : []),
+    ...(phoneText ? [{
+      id: "phone-events",
+      label: "手机联动",
+      detail: `${phoneEvents.length} 条已确认事件`,
+      estimatedTokens: estimateTokens(phoneText),
     }] : []),
     {
       id: "history",

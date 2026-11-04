@@ -118,6 +118,24 @@ export type ConversationRecord = {
   updatedAt: string;
 };
 
+export type StoryEventType = "phone_message_received" | "phone_message_sent";
+
+export type StoryEvent = {
+  id: string;
+  schemaVersion: 1;
+  storyId: string;
+  eventType: StoryEventType;
+  actorId: string;
+  targetId: string;
+  content: string;
+  storyTime: string;
+  source: "ai" | "user" | "system";
+  status: "committed";
+  createdAt: string;
+  readAt?: string;
+  replyToEventId?: string;
+};
+
 export type ModelConfig = {
   baseUrl: string;
   model: string;
@@ -208,12 +226,13 @@ export type CompiledContext = {
 
 export type LunemirBackup = {
   format: "lunemir-backup";
-  schemaVersion: 3;
+  schemaVersion: 4;
   exportedAt: string;
   characters: CharacterRecord[];
   conversations: ConversationRecord[];
   lorebooks: LorebookRecord[];
   personas: PersonaRecord[];
   presets: PresetRecord[];
+  storyEvents: StoryEvent[];
   settings?: PersistedSettings;
 };

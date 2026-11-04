@@ -39,6 +39,7 @@ export function LunemirPrototype() {
   const [section, setSection] = useState<Section>("chat");
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
+  const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneButtonPosition, setPhoneButtonPosition] = useState<{ x: number; y: number } | null>(null);
   const [phonePanelPosition, setPhonePanelPosition] = useState<{ x: number; y: number } | null>(null);
   const [draggingPhone, setDraggingPhone] = useState<DragTarget | null>(null);
@@ -54,6 +55,7 @@ export function LunemirPrototype() {
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
   const messageListRef = useRef<HTMLDivElement | null>(null);
+  const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const phoneDragRef = useRef<{
     target: DragTarget;
@@ -106,6 +108,12 @@ export function LunemirPrototype() {
     if (!messageList) return;
     messageList.scrollTo({ top: messageList.scrollHeight, behavior: runtime.streaming ? "auto" : "smooth" });
   }, [runtime.messages.length, lastMessageContent, runtime.streaming, section]);
+
+  useEffect(() => {
+    if (!phoneOpen || phoneApp !== "messages") return;
+    const messageList = phoneMessageListRef.current;
+    if (messageList) messageList.scrollTop = messageList.scrollHeight;
+  }, [runtime.storyEvents.length, phoneOpen, phoneApp]);
 
   function beginPhoneDrag(event: ReactPointerEvent<HTMLElement>, target: DragTarget) {
     if (event.button !== 0) return;
@@ -467,10 +475,15 @@ export function LunemirPrototype() {
         onPointerMove={movePhoneDrag}
         onPointerUp={endPhoneDrag}
         onPointerCancel={endPhoneDrag}
-        onClick={() => { if (suppressPhoneClickRef.current) { suppressPhoneClickRef.current = false; return; } setPhoneOpen(!phoneOpen); }}
+        onClick={() => {
+          if (suppressPhoneClickRef.current) { suppressPhoneClickRef.current = false; return; }
+          const nextOpen = !phoneOpen;
+          setPhoneOpen(nextOpen);
+          if (nextOpen && phoneApp === "messages") void runtime.markPhoneEventsRead();
+        }}
         aria-label="打开或拖动悬浮小手机"
       >
-        <span className="phone-outline"><i /></span>{pendingMemories.length > 0 && <b>{pendingMemories.length}</b>}
+        <span className="phone-outline"><i /></span>{runtime.unreadPhoneEvents > 0 && <b>{runtime.unreadPhoneEvents}</b>}
       </button>
 
       <section
@@ -480,16 +493,29 @@ export function LunemirPrototype() {
         aria-hidden={!phoneOpen}
       >
         <div className="phone-frame">
-          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>22:43</span><i /><span>◒</span></div>
+          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>{new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><i /><span>◒</span></div>
           <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{runtime.activeConversation?.title ?? `${activeName} · 本地会话`}</span></div>
           <div className="phone-apps">
             {(["messages", "notes"] as PhoneApp[]).map((app) => {
               const data = { messages: ["✦", "消息"], notes: ["⌑", "备忘"] }[app];
-              return <button key={app} onClick={() => setPhoneApp(app)} className={phoneApp === app ? "is-active" : ""}><i>{data[0]}</i><span>{data[1]}</span></button>;
+              return <button key={app} onClick={() => { setPhoneApp(app); if (app === "messages") void runtime.markPhoneEventsRead(); }} className={phoneApp === app ? "is-active" : ""}><i>{data[0]}</i><span>{data[1]}{app === "messages" && runtime.unreadPhoneEvents > 0 ? ` · ${runtime.unreadPhoneEvents}` : ""}</span></button>;
             })}
           </div>
           <div className="phone-content">
-            {phoneApp === "messages" && <><h3>最近消息</h3>{runtime.messages.slice(-4).reverse().map((message) => <article key={message.id}><span className="mini-avatar">{message.role === "assistant" ? activeName.charAt(0) : (runtime.activePersona?.name ?? "Y").charAt(0)}</span><div><strong>{message.role === "assistant" ? activeName : runtime.activePersona?.name ?? "你"}</strong><p>{message.content.slice(0, 42)}</p></div><time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time></article>)}{runtime.messages.length === 0 && <p className="phone-caption">等待第一条消息</p>}</>}
+            {phoneApp === "messages" && <div className="phone-chat">
+              <div className="phone-chat-heading"><span><strong>{activeName}</strong><small>{runtime.phoneEventStatus === "checking" ? "正在检查剧情事件…" : runtime.phoneEventStatus === "error" ? "联动检查失败，可重试" : "与主剧情共享记录"}</small></span><button disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()}>{runtime.phoneEventStatus === "checking" ? "…" : "检查新消息"}</button></div>
+              <div className="phone-message-list" ref={phoneMessageListRef}>
+                {runtime.storyEvents.map((event) => {
+                  const incoming = event.eventType === "phone_message_received";
+                  return <article className={incoming ? "phone-message incoming" : "phone-message outgoing"} key={event.id}><span>{event.content}</span><time>{new Date(event.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{incoming && event.readAt ? " · 已读" : ""}</time></article>;
+                })}
+                {runtime.storyEvents.length === 0 && <p className="phone-caption">还没有手机通信。完成一轮主剧情后系统会检查角色是否有理由联系你，也可以手动检查一次。</p>}
+              </div>
+              <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content) return; setPhoneDraft(""); void runtime.sendPhoneMessage(content); }}>
+                <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder={`回复 ${activeName}…`} maxLength={600} />
+                <button type="submit" disabled={!phoneDraft.trim()} aria-label="发送手机消息">↑</button>
+              </form>
+            </div>}
             {phoneApp === "notes" && <><h3>剧情备忘</h3>{(runtime.activeConversation?.checkpoints ?? []).map((checkpoint) => <div className="note-card" key={checkpoint.id}><strong>{checkpoint.label}</strong><p>{new Date(checkpoint.createdAt).toLocaleString("zh-CN")}</p></div>)}{approvedMemories.map((memory) => <div className="note-card" key={memory.id}><strong>长期记忆</strong><p>{memory.content}</p></div>)}{(runtime.activeConversation?.checkpoints?.length ?? 0) === 0 && approvedMemories.length === 0 && <p className="phone-caption">在会话管理中创建章节点，或确认一条长期记忆。</p>}</>}
           </div>
           <button className="phone-home" onClick={() => setPhoneOpen(false)} aria-label="关闭手机" />

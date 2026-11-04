@@ -105,28 +105,29 @@ domain repositories
 
 ## 7. 本地存储
 
-当前使用 IndexedDB v3 保存角色、多会话与剧情分支、章节点、长期记忆、独立世界书、用户人设、提示词预设和低风险设置。数据库升级通过 `onupgradeneeded` 将角色会话索引从唯一索引迁移为普通索引，并保留已有角色与聊天。角色卡 PNG 暂以 Data URL 随角色记录保存，后续素材层会迁移为独立 Blob 记录，避免大头像重复占用结构化存储。
+当前使用 IndexedDB v4 保存角色、多会话与剧情分支、章节点、长期记忆、结构化剧情事件、独立世界书、用户人设、提示词预设和低风险设置。`storyEvents` 按 `storyId` 建立索引；当前 Conversation ID 作为过渡 Story ID，后续迁移为独立 Story 表时保留映射。角色卡 PNG 暂以 Data URL 随角色记录保存，后续素材层会迁移为独立 Blob 记录，避免大头像重复占用结构化存储。
 
 API 密钥默认仅存在于会话内存。用户选择持久保存时，使用 Web Crypto 加密；浏览器端加密无法完全抵抗同源脚本攻击，因此仍需严格控制依赖、内容安全策略和 XSS 风险。
 
-## 8. Phone Event
+## 8. Story Event 与 Phone Event
 
-建议的事件信封：
+当前已实现的事件信封：
 
 ```ts
-type PhoneEvent = {
+type StoryEvent = {
   id: string;
-  type: "message.received" | "album.added" | "note.created";
+  storyId: string;
+  eventType: "phone_message_received" | "phone_message_sent";
   actorId: string;
-  conversationId: string;
-  payload: unknown;
-  requestedAt: string;
-  triggerAt?: string;
-  status: "suggested" | "accepted" | "dismissed" | "delivered";
+  targetId: string;
+  content: string;
+  storyTime: string;
+  source: "ai" | "user" | "system";
+  status: "committed";
 };
 ```
 
-模型输出先解析为 `suggested`，随后经过 JSON Schema 验证、权限检查、重复检查和用户策略，才能进入 `accepted` 或 `delivered`。
+模型只返回独立 JSON 提案，不从自然语言回复中猜测事件。应用层完成字段校验、长度限制、故事隔离和五分钟去重后才写入 `committed` 事件。手机回复使用相同仓库；上下文编译器只读取已提交事件。
 
 ## 9. 安全边界
 

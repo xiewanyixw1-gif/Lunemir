@@ -4,16 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
-import { streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
+import { generateChatCompletion, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
+import { createStoryEvent, isDuplicatePhoneEvent, parsePhoneMessageProposal } from "../../lib/lunemir/story-events";
 import {
   createBackup,
   deleteConversation as removeStoredConversation,
+  deleteStoryEvents,
   getSettings,
   listCharacters,
   listConversations,
   listLorebooks,
   listPersonas,
   listPresets,
+  listStoryEvents,
   restoreBackup,
   saveCharacter,
   saveConversation,
@@ -21,6 +24,7 @@ import {
   savePersona,
   savePreset,
   saveSettings,
+  saveStoryEvent,
 } from "../../lib/lunemir/storage";
 import type {
   AppearanceSettings,
@@ -33,6 +37,7 @@ import type {
   PersonaRecord,
   PresetRecord,
   StoredMessage,
+  StoryEvent,
 } from "../../lib/lunemir/types";
 
 function initialMessage(character: CharacterRecord): StoredMessage[] {
@@ -101,6 +106,8 @@ export function useLunemirRuntime() {
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [conversation, setConversation] = useState<ConversationRecord | null>(null);
   const [messages, setMessages] = useState<StoredMessage[]>([]);
+  const [storyEvents, setStoryEvents] = useState<StoryEvent[]>([]);
+  const [phoneEventStatus, setPhoneEventStatus] = useState<"idle" | "checking" | "linked" | "error">("idle");
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
   const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE);
   const [apiKey, setApiKey] = useState("");
@@ -112,13 +119,16 @@ export function useLunemirRuntime() {
   const [streaming, setStreaming] = useState(false);
   const [contextReport, setContextReport] = useState<ContextReport | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const storyEventsRef = useRef<StoryEvent[]>([]);
+  const phoneEventCheckRef = useRef(false);
   const contextLimitRef = useRef(DEFAULT_MODEL_CONFIG.contextLimit);
   const contextResourcesRef = useRef<{
     persona: PersonaRecord | null;
     preset: PresetRecord | null;
     externalLoreEntries: LorebookRecord["entries"];
     memories: string[];
-  }>({ persona: null, preset: null, externalLoreEntries: [], memories: [] });
+    storyEvents: StoryEvent[];
+  }>({ persona: null, preset: null, externalLoreEntries: [], memories: [], storyEvents: [] });
   const contentLibraryRef = useRef<{
     lorebooks: LorebookRecord[];
     assignments: Record<string, string[]>;
@@ -169,12 +179,17 @@ export function useLunemirRuntime() {
     }
     const nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
       ?? characterConversations[0];
+    const nextStoryEvents = await listStoryEvents(nextConversation.id);
     setConversations(characterConversations);
     setConversation(nextConversation);
     setMessages(nextConversation.messages);
+    setStoryEvents(nextStoryEvents);
+    setPhoneEventStatus("idle");
+    storyEventsRef.current = nextStoryEvents;
     contextResourcesRef.current.memories = (nextConversation.memories ?? [])
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
+    contextResourcesRef.current.storyEvents = nextStoryEvents;
     refreshContext(character, nextConversation.messages);
     await saveSettings({
       ...settings,
@@ -223,6 +238,7 @@ export function useLunemirRuntime() {
         .filter((lorebook) => (assignments[selected.id] ?? []).includes(lorebook.id))
         .flatMap((lorebook) => lorebook.entries),
       memories: [],
+      storyEvents: [],
     };
     const nextModel = settings.model ?? DEFAULT_MODEL_CONFIG;
     setAppearance(normalizeAppearance(settings.appearance));
@@ -258,9 +274,14 @@ export function useLunemirRuntime() {
     if (!character) return;
     setConversation(nextConversation);
     setMessages(nextConversation.messages);
+    const nextStoryEvents = await listStoryEvents(nextConversation.id);
+    setStoryEvents(nextStoryEvents);
+    setPhoneEventStatus("idle");
+    storyEventsRef.current = nextStoryEvents;
     contextResourcesRef.current.memories = (nextConversation.memories ?? [])
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
+    contextResourcesRef.current.storyEvents = nextStoryEvents;
     refreshContext(character, nextConversation.messages);
     const settings = await getSettings();
     await saveSettings({
@@ -312,6 +333,7 @@ export function useLunemirRuntime() {
   async function deleteConversation(conversationId: string) {
     const character = activeCharacter;
     if (!character || streaming) return;
+    await deleteStoryEvents(conversationId);
     await removeStoredConversation(conversationId);
     let remaining = conversations.filter((item) => item.id !== conversationId);
     if (remaining.length === 0) remaining = [await createConversationRecord(character, { title: "新的故事" })];
@@ -371,6 +393,105 @@ export function useLunemirRuntime() {
     await saveConversation(nextConversation);
   }
 
+  async function commitStoryEvent(event: StoryEvent, contextMessages: StoredMessage[] = messages) {
+    const character = activeCharacter;
+    if (!character) return;
+    await saveStoryEvent(event);
+    const nextEvents = [...storyEventsRef.current, event]
+      .sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt));
+    storyEventsRef.current = nextEvents;
+    setStoryEvents(nextEvents);
+    contextResourcesRef.current.storyEvents = nextEvents;
+    refreshContext(character, contextMessages);
+  }
+
+  async function requestPhoneEvent(contextMessages: StoredMessage[] = messages, force = true) {
+    const character = activeCharacter;
+    const persona = activePersona;
+    const currentStory = conversation;
+    if (!character || !persona || !currentStory || phoneEventCheckRef.current || !modelIsReady()) return;
+    const latestIncoming = [...storyEventsRef.current].reverse().find((event) => event.eventType === "phone_message_received" && event.actorId === character.id);
+    if (!force && latestIncoming && Date.now() - Date.parse(latestIncoming.createdAt) < 30 * 60 * 1000) return;
+
+    phoneEventCheckRef.current = true;
+    setPhoneEventStatus("checking");
+    const controller = new AbortController();
+    const transcript = contextMessages.slice(-10).map((message) => `${message.role === "assistant" ? character.name : persona.name}：${message.content}`).join("\n");
+    const phoneHistory = storyEventsRef.current.slice(-8).map((event) => `${event.actorId === character.id ? character.name : persona.name}：${event.content}`).join("\n");
+    const decisionRule = force
+      ? "本次是用户主动推进手机剧情，请生成一条符合当前状态的角色手机消息，并将 shouldSend 设为 true。"
+      : "只有当角色在当前剧情状态下确实有理由额外联系用户时才将 shouldSend 设为 true；不要为了制造通知而强行发送。";
+    try {
+      const raw = await generateChatCompletion({
+        config: modelConfig,
+        apiKey,
+        signal: controller.signal,
+        maxTokens: 220,
+        temperature: Math.min(modelConfig.temperature, 0.72),
+        messages: [
+          {
+            role: "system",
+            content: `你是剧情事件规划器，不负责续写主聊天。${decisionRule}\n角色：${character.name}\n角色设定：${character.description}\n性格：${character.personality}\n当前场景：${character.scenario}\n用户人设：${persona.name}，${persona.description}\n只输出严格 JSON，不要 Markdown：{"shouldSend":true或false,"content":"手机消息正文","reason":"触发理由"}。消息必须像即时通讯，保持角色语言习惯，不替用户行动，不引入未发生的事实，正文最多 600 字。`,
+          },
+          { role: "user", content: `最近主剧情：\n${transcript || "尚无主剧情消息"}\n\n已确认手机通信：\n${phoneHistory || "尚无手机消息"}` },
+        ],
+      });
+      const proposal = parsePhoneMessageProposal(raw);
+      if (!proposal.shouldSend) {
+        setPhoneEventStatus("idle");
+        return;
+      }
+      const event = createStoryEvent({
+        storyId: currentStory.id,
+        eventType: "phone_message_received",
+        actorId: character.id,
+        targetId: persona.id,
+        content: proposal.content,
+        source: "ai",
+      });
+      if (isDuplicatePhoneEvent(storyEventsRef.current, event)) {
+        setPhoneEventStatus("idle");
+        return;
+      }
+      await commitStoryEvent(event, contextMessages);
+      setPhoneEventStatus("linked");
+    } catch {
+      setPhoneEventStatus("error");
+    } finally {
+      phoneEventCheckRef.current = false;
+    }
+  }
+
+  async function sendPhoneMessage(content: string) {
+    const character = activeCharacter;
+    const persona = activePersona;
+    if (!character || !persona || !conversation || !content.trim()) return;
+    const latestIncoming = [...storyEventsRef.current].reverse().find((event) => event.eventType === "phone_message_received");
+    const event = createStoryEvent({
+      storyId: conversation.id,
+      eventType: "phone_message_sent",
+      actorId: persona.id,
+      targetId: character.id,
+      content,
+      source: "user",
+      replyToEventId: latestIncoming?.id,
+    });
+    await commitStoryEvent(event);
+    setPhoneEventStatus("linked");
+  }
+
+  async function markPhoneEventsRead() {
+    const now = new Date().toISOString();
+    const changed = storyEventsRef.current.filter((event) => event.eventType === "phone_message_received" && !event.readAt);
+    if (changed.length === 0) return;
+    const changedIds = new Set(changed.map((event) => event.id));
+    const nextEvents = storyEventsRef.current.map((event) => changedIds.has(event.id) ? { ...event, readAt: now } : event);
+    await Promise.all(nextEvents.filter((event) => changedIds.has(event.id)).map((event) => saveStoryEvent(event)));
+    storyEventsRef.current = nextEvents;
+    contextResourcesRef.current.storyEvents = nextEvents;
+    setStoryEvents(nextEvents);
+  }
+
   function modelIsReady() {
     if (modelConfig.baseUrl.trim() && modelConfig.model.trim()) return true;
     setRuntimeError("请先在设置中填写 API 地址与模型 ID。");
@@ -411,6 +532,7 @@ export function useLunemirRuntime() {
     abortRef.current = controller;
     setStreaming(true);
     let assistantText = "";
+    let completedForPhoneEvent: StoredMessage[] | null = null;
 
     try {
       await streamChatCompletion({
@@ -446,6 +568,7 @@ export function useLunemirRuntime() {
       setMessages(completed);
       await persistMessages(completed);
       refreshContext(character, completed);
+      if (target.mode === "new") completedForPhoneEvent = completed;
     } catch (error) {
       const stopped = error instanceof DOMException && error.name === "AbortError";
       const partialContent = `${prefix}${assistantText}`;
@@ -472,6 +595,7 @@ export function useLunemirRuntime() {
       abortRef.current = null;
       setStreaming(false);
     }
+    if (completedForPhoneEvent) void requestPhoneEvent(completedForPhoneEvent, false);
   }
 
   async function sendMessage(content: string) {
@@ -776,6 +900,9 @@ export function useLunemirRuntime() {
     conversations,
     activeConversation: conversation,
     messages,
+    storyEvents,
+    unreadPhoneEvents: storyEvents.filter((event) => event.eventType === "phone_message_received" && !event.readAt).length,
+    phoneEventStatus,
     streaming,
     runtimeError,
     clearRuntimeError: () => setRuntimeError(""),
@@ -814,6 +941,9 @@ export function useLunemirRuntime() {
     regenerateLastReply,
     continueLastReply,
     selectMessageAlternative,
+    requestPhoneEvent,
+    sendPhoneMessage,
+    markPhoneEventsRead,
     stopGeneration: () => abortRef.current?.abort(),
     saveModel,
     testConnection,

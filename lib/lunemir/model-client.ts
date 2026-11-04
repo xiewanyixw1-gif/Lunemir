@@ -105,3 +105,34 @@ export async function streamChatCompletion(options: {
     }
   }
 }
+
+export async function generateChatCompletion(options: {
+  config: ModelConfig;
+  apiKey: string;
+  messages: ModelMessage[];
+  signal: AbortSignal;
+  maxTokens?: number;
+  temperature?: number;
+}) {
+  const { config, apiKey, messages, signal } = options;
+  if (!config.model.trim()) throw new Error("请填写模型 ID。");
+  const response = await fetch(endpoint(config.baseUrl, "/chat/completions"), {
+    method: "POST",
+    headers: requestHeaders(apiKey),
+    signal,
+    body: JSON.stringify({
+      model: config.model.trim(),
+      messages,
+      temperature: options.temperature ?? Math.min(config.temperature, 0.75),
+      max_tokens: options.maxTokens ?? Math.min(config.maxTokens, 240),
+      stream: false,
+    }),
+  });
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`模型请求失败（${response.status}）：${detail.slice(0, 240) || response.statusText}`);
+  }
+  const content = extractDelta(await response.json() as unknown);
+  if (!content.trim()) throw new Error("模型没有返回结构化事件提案。");
+  return content.trim();
+}

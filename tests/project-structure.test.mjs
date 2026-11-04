@@ -35,8 +35,31 @@ test("ships a local-first persistence and backup layer", async () => {
   assert.match(storage, /LOREBOOK_STORE/);
   assert.match(storage, /PERSONA_STORE/);
   assert.match(storage, /PRESET_STORE/);
-  assert.match(storage, /schemaVersion: 3/);
+  assert.match(storage, /schemaVersion: 4/);
   assert.match(storage, /unique: false/);
+  assert.match(storage, /STORY_EVENT_STORE/);
+});
+
+test("links committed phone events with the main story context", async () => {
+  const [events, storage, runtime, context, prototype] = await Promise.all([
+    readFile(new URL("lib/lunemir/story-events.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+  ]);
+
+  assert.match(events, /parsePhoneMessageProposal/);
+  assert.match(events, /validateStoryEvent/);
+  assert.match(events, /isDuplicatePhoneEvent/);
+  assert.match(storage, /listStoryEvents/);
+  assert.match(storage, /saveStoryEvent/);
+  assert.match(runtime, /requestPhoneEvent/);
+  assert.match(runtime, /sendPhoneMessage/);
+  assert.match(runtime, /markPhoneEventsRead/);
+  assert.match(context, /已确认的手机通信事件/);
+  assert.match(prototype, /检查新消息/);
+  assert.match(prototype, /回复.*activeName/);
 });
 
 test("supports real character cards and compatible streaming", async () => {
