@@ -35,7 +35,8 @@ test("ships a local-first persistence and backup layer", async () => {
   assert.match(storage, /LOREBOOK_STORE/);
   assert.match(storage, /PERSONA_STORE/);
   assert.match(storage, /PRESET_STORE/);
-  assert.match(storage, /schemaVersion: 2/);
+  assert.match(storage, /schemaVersion: 3/);
+  assert.match(storage, /unique: false/);
 });
 
 test("supports real character cards and compatible streaming", async () => {
@@ -72,9 +73,15 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(runtime, /saveAppearance/);
   assert.match(runtime, /downloadConversation/);
   assert.match(runtime, /saveCustomBackground/);
+  assert.match(runtime, /createNewConversation/);
+  assert.match(runtime, /branchConversation/);
+  assert.match(runtime, /createCheckpoint/);
+  assert.match(runtime, /addMemoryCandidate/);
   assert.match(prototype, /重新生成/);
   assert.match(prototype, /继续生成/);
-  assert.match(prototype, /导出记录/);
+  assert.match(prototype, /导出当前会话/);
+  assert.match(prototype, /会话、章节与记忆/);
+  assert.doesNotMatch(prototype, /aria-label="添加附件"/);
   assert.match(prototype, /onPointerDown/);
   assert.match(prototype, /全屏毛玻璃/);
   assert.match(prototype, /角色卡图片/);

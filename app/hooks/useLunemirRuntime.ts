@@ -7,9 +7,10 @@ import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARAN
 import { streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
 import {
   createBackup,
-  getConversation,
+  deleteConversation as removeStoredConversation,
   getSettings,
   listCharacters,
+  listConversations,
   listLorebooks,
   listPersonas,
   listPresets,
@@ -45,16 +46,21 @@ function initialMessage(character: CharacterRecord): StoredMessage[] {
   }];
 }
 
-async function loadOrCreateConversation(character: CharacterRecord) {
-  const existing = await getConversation(character.id);
-  if (existing) return existing;
+async function createConversationRecord(
+  character: CharacterRecord,
+  options: { title?: string; messages?: StoredMessage[]; parentConversationId?: string; branchedFromMessageId?: string } = {},
+) {
   const now = new Date().toISOString();
   const conversation: ConversationRecord = {
     id: createId("conversation"),
     schemaVersion: 1,
     characterId: character.id,
-    title: character.firstMessage.slice(0, 28) || `与 ${character.name} 的对话`,
-    messages: initialMessage(character),
+    title: options.title || character.firstMessage.slice(0, 28) || `与 ${character.name} 的对话`,
+    messages: options.messages ?? initialMessage(character),
+    parentConversationId: options.parentConversationId,
+    branchedFromMessageId: options.branchedFromMessageId,
+    checkpoints: [],
+    memories: [],
     createdAt: now,
     updatedAt: now,
   };
@@ -92,6 +98,7 @@ export function useLunemirRuntime() {
   const [activePersonaId, setActivePersonaId] = useState("");
   const [activePresetId, setActivePresetId] = useState("");
   const [lorebookAssignments, setLorebookAssignments] = useState<Record<string, string[]>>({});
+  const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [conversation, setConversation] = useState<ConversationRecord | null>(null);
   const [messages, setMessages] = useState<StoredMessage[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
@@ -110,7 +117,8 @@ export function useLunemirRuntime() {
     persona: PersonaRecord | null;
     preset: PresetRecord | null;
     externalLoreEntries: LorebookRecord["entries"];
-  }>({ persona: null, preset: null, externalLoreEntries: [] });
+    memories: string[];
+  }>({ persona: null, preset: null, externalLoreEntries: [], memories: [] });
   const contentLibraryRef = useRef<{
     lorebooks: LorebookRecord[];
     assignments: Record<string, string[]>;
@@ -153,12 +161,27 @@ export function useLunemirRuntime() {
     contextResourcesRef.current.externalLoreEntries = contentLibraryRef.current.lorebooks
       .filter((lorebook) => assigned.has(lorebook.id))
       .flatMap((lorebook) => lorebook.entries);
-    const nextConversation = await loadOrCreateConversation(character);
+    const settings = await getSettings();
+    let characterConversations = (await listConversations(character.id))
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    if (characterConversations.length === 0) {
+      characterConversations = [await createConversationRecord(character)];
+    }
+    const nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
+      ?? characterConversations[0];
+    setConversations(characterConversations);
     setConversation(nextConversation);
     setMessages(nextConversation.messages);
+    contextResourcesRef.current.memories = (nextConversation.memories ?? [])
+      .filter((memory) => memory.status === "approved")
+      .map((memory) => memory.content);
     refreshContext(character, nextConversation.messages);
-    const settings = await getSettings();
-    await saveSettings({ ...settings, activeCharacterId: character.id, updatedAt: new Date().toISOString() });
+    await saveSettings({
+      ...settings,
+      activeCharacterId: character.id,
+      activeConversationIds: { ...(settings.activeConversationIds ?? {}), [character.id]: nextConversation.id },
+      updatedAt: new Date().toISOString(),
+    });
   }, [refreshContext]);
 
   const reloadAll = useCallback(async () => {
@@ -199,6 +222,7 @@ export function useLunemirRuntime() {
       externalLoreEntries: storedLorebooks
         .filter((lorebook) => (assignments[selected.id] ?? []).includes(lorebook.id))
         .flatMap((lorebook) => lorebook.entries),
+      memories: [],
     };
     const nextModel = settings.model ?? DEFAULT_MODEL_CONFIG;
     setAppearance(normalizeAppearance(settings.appearance));
@@ -225,6 +249,125 @@ export function useLunemirRuntime() {
     if (!conversation) return;
     const nextConversation = { ...conversation, messages: nextMessages, updatedAt: new Date().toISOString() };
     setConversation(nextConversation);
+    setConversations((current) => current.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    await saveConversation(nextConversation);
+  }
+
+  async function activateConversationRecord(nextConversation: ConversationRecord) {
+    const character = activeCharacter;
+    if (!character) return;
+    setConversation(nextConversation);
+    setMessages(nextConversation.messages);
+    contextResourcesRef.current.memories = (nextConversation.memories ?? [])
+      .filter((memory) => memory.status === "approved")
+      .map((memory) => memory.content);
+    refreshContext(character, nextConversation.messages);
+    const settings = await getSettings();
+    await saveSettings({
+      ...settings,
+      activeConversationIds: { ...(settings.activeConversationIds ?? {}), [character.id]: nextConversation.id },
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  async function selectConversation(conversationId: string) {
+    if (streaming) return;
+    const nextConversation = conversations.find((item) => item.id === conversationId);
+    if (nextConversation) await activateConversationRecord(nextConversation);
+  }
+
+  async function createNewConversation() {
+    const character = activeCharacter;
+    if (!character || streaming) return;
+    const nextConversation = await createConversationRecord(character, { title: `新会话 · ${conversations.length + 1}` });
+    setConversations((current) => [nextConversation, ...current]);
+    await activateConversationRecord(nextConversation);
+  }
+
+  async function branchConversation(messageId: string) {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming) return;
+    const messageIndex = messages.findIndex((message) => message.id === messageId);
+    if (messageIndex < 0) return;
+    const branchMessages = messages.slice(0, messageIndex + 1).map((message) => ({ ...message }));
+    const nextConversation = await createConversationRecord(character, {
+      title: `${conversation.title} · 分支`,
+      messages: branchMessages,
+      parentConversationId: conversation.id,
+      branchedFromMessageId: messageId,
+    });
+    setConversations((current) => [nextConversation, ...current]);
+    await activateConversationRecord(nextConversation);
+  }
+
+  async function renameConversation(conversationId: string, title: string) {
+    const current = conversations.find((item) => item.id === conversationId);
+    if (!current || !title.trim()) return;
+    const nextConversation = { ...current, title: title.trim(), updatedAt: new Date().toISOString() };
+    setConversations((items) => items.map((item) => item.id === conversationId ? nextConversation : item));
+    if (conversation?.id === conversationId) setConversation(nextConversation);
+    await saveConversation(nextConversation);
+  }
+
+  async function deleteConversation(conversationId: string) {
+    const character = activeCharacter;
+    if (!character || streaming) return;
+    await removeStoredConversation(conversationId);
+    let remaining = conversations.filter((item) => item.id !== conversationId);
+    if (remaining.length === 0) remaining = [await createConversationRecord(character, { title: "新的故事" })];
+    setConversations(remaining);
+    if (conversation?.id === conversationId) await activateConversationRecord(remaining[0]);
+  }
+
+  async function createCheckpoint(label?: string) {
+    if (!conversation || streaming) return;
+    const checkpoints = conversation.checkpoints ?? [];
+    const nextConversation: ConversationRecord = {
+      ...conversation,
+      checkpoints: [...checkpoints, {
+        id: createId("checkpoint"),
+        label: label?.trim() || `章节点 ${checkpoints.length + 1}`,
+        messageId: messages.at(-1)?.id,
+        createdAt: new Date().toISOString(),
+      }],
+      updatedAt: new Date().toISOString(),
+    };
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    await saveConversation(nextConversation);
+  }
+
+  async function addMemoryCandidate(messageId: string) {
+    if (!conversation || streaming) return;
+    const source = messages.find((message) => message.id === messageId);
+    if (!source || (conversation.memories ?? []).some((memory) => memory.sourceMessageId === messageId)) return;
+    const nextConversation: ConversationRecord = {
+      ...conversation,
+      memories: [...(conversation.memories ?? []), {
+        id: createId("memory"),
+        content: source.content.trim(),
+        sourceMessageId: messageId,
+        status: "candidate",
+        createdAt: new Date().toISOString(),
+      }],
+      updatedAt: new Date().toISOString(),
+    };
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    await saveConversation(nextConversation);
+  }
+
+  async function setMemoryStatus(memoryId: string, status: "approved" | "remove") {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming) return;
+    const memories = status === "remove"
+      ? (conversation.memories ?? []).filter((memory) => memory.id !== memoryId)
+      : (conversation.memories ?? []).map((memory) => memory.id === memoryId ? { ...memory, status: "approved" as const } : memory);
+    const nextConversation = { ...conversation, memories, updatedAt: new Date().toISOString() };
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    contextResourcesRef.current.memories = memories.filter((memory) => memory.status === "approved").map((memory) => memory.content);
+    refreshContext(character, messages);
     await saveConversation(nextConversation);
   }
 
@@ -609,6 +752,8 @@ export function useLunemirRuntime() {
     activePersona,
     presets,
     activePreset,
+    conversations,
+    activeConversation: conversation,
     messages,
     streaming,
     runtimeError,
@@ -630,6 +775,15 @@ export function useLunemirRuntime() {
     parseImport,
     confirmImport,
     selectCharacter,
+    selectConversation,
+    createNewConversation,
+    branchConversation,
+    renameConversation,
+    deleteConversation,
+    createCheckpoint,
+    addMemoryCandidate,
+    approveMemory: (memoryId: string) => setMemoryStatus(memoryId, "approved"),
+    removeMemory: (memoryId: string) => setMemoryStatus(memoryId, "remove"),
     toggleLorebookAssignment,
     savePersonaProfile,
     activatePreset,

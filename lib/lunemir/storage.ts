@@ -10,7 +10,7 @@ import type {
 } from "./types";
 
 const DATABASE_NAME = "lunemir";
-const DATABASE_VERSION = 2;
+const DATABASE_VERSION = 3;
 const CHARACTER_STORE = "characters";
 const CONVERSATION_STORE = "conversations";
 const SETTINGS_STORE = "settings";
@@ -44,14 +44,18 @@ export function openLunemirDatabase() {
     databasePromise = new Promise<IDBDatabase>((resolve, reject) => {
       const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
 
-      request.onupgradeneeded = () => {
+      request.onupgradeneeded = (event) => {
         const database = request.result;
         if (!database.objectStoreNames.contains(CHARACTER_STORE)) {
           database.createObjectStore(CHARACTER_STORE, { keyPath: "id" });
         }
         if (!database.objectStoreNames.contains(CONVERSATION_STORE)) {
           const conversations = database.createObjectStore(CONVERSATION_STORE, { keyPath: "id" });
-          conversations.createIndex("characterId", "characterId", { unique: true });
+          conversations.createIndex("characterId", "characterId", { unique: false });
+        } else if ((event as IDBVersionChangeEvent).oldVersion < 3) {
+          const conversations = request.transaction?.objectStore(CONVERSATION_STORE);
+          if (conversations?.indexNames.contains("characterId")) conversations.deleteIndex("characterId");
+          conversations?.createIndex("characterId", "characterId", { unique: false });
         }
         if (!database.objectStoreNames.contains(SETTINGS_STORE)) {
           database.createObjectStore(SETTINGS_STORE, { keyPath: "key" });
@@ -90,6 +94,13 @@ async function put<T>(storeName: string, value: T) {
   return value;
 }
 
+async function remove(storeName: string, key: IDBValidKey) {
+  const database = await openLunemirDatabase();
+  const transaction = database.transaction(storeName, "readwrite");
+  transaction.objectStore(storeName).delete(key);
+  await transactionDone(transaction);
+}
+
 export function listCharacters() {
   return getAll<CharacterRecord>(CHARACTER_STORE);
 }
@@ -122,15 +133,19 @@ export function savePreset(preset: PresetRecord) {
   return put(PRESET_STORE, preset);
 }
 
-export async function getConversation(characterId: string) {
+export async function listConversations(characterId: string) {
   const database = await openLunemirDatabase();
   const transaction = database.transaction(CONVERSATION_STORE, "readonly");
   const index = transaction.objectStore(CONVERSATION_STORE).index("characterId");
-  return requestToPromise(index.get(characterId)) as Promise<ConversationRecord | undefined>;
+  return requestToPromise(index.getAll(characterId)) as Promise<ConversationRecord[]>;
 }
 
 export function saveConversation(conversation: ConversationRecord) {
   return put(CONVERSATION_STORE, conversation);
+}
+
+export function deleteConversation(conversationId: string) {
+  return remove(CONVERSATION_STORE, conversationId);
 }
 
 export async function getSettings(): Promise<PersistedSettings> {
@@ -162,7 +177,7 @@ export async function createBackup(): Promise<LunemirBackup> {
 
   return {
     format: "lunemir-backup",
-    schemaVersion: 2,
+    schemaVersion: 3,
     exportedAt: new Date().toISOString(),
     characters,
     conversations,
@@ -174,7 +189,7 @@ export async function createBackup(): Promise<LunemirBackup> {
 }
 
 type RestorableBackup = Omit<LunemirBackup, "schemaVersion" | "lorebooks" | "personas" | "presets"> & {
-  schemaVersion: 1 | 2;
+  schemaVersion: 1 | 2 | 3;
   lorebooks?: LorebookRecord[];
   personas?: PersonaRecord[];
   presets?: PresetRecord[];
@@ -184,7 +199,7 @@ function isBackup(value: unknown): value is RestorableBackup {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<RestorableBackup>;
   return candidate.format === "lunemir-backup"
-    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2)
+    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3)
     && Array.isArray(candidate.characters)
     && Array.isArray(candidate.conversations);
 }
@@ -192,7 +207,7 @@ function isBackup(value: unknown): value is RestorableBackup {
 export async function restoreBackup(file: File) {
   const parsed = JSON.parse(await file.text()) as unknown;
   if (!isBackup(parsed)) {
-    throw new Error("这不是有效的 Lunemir v1 备份文件。");
+    throw new Error("这不是有效的 Lunemir 备份文件。");
   }
 
   const database = await openLunemirDatabase();

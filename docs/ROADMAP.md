@@ -10,7 +10,7 @@
 
 ## Phase 1 · 本地内容基础
 
-- [x] IndexedDB 数据库与 v2 增量迁移
+- [x] IndexedDB 数据库与 v3 增量迁移
 - [x] Character / Conversation / Persona / Lorebook / Preset 领域模型
 - [x] 角色卡 V1 / V2 / V3 PNG / JSON 解析器
 - [x] 独立世界书与聊天预设导入预览
@@ -27,16 +27,17 @@
 - [x] 消息编辑与最后回复重新生成
 - [x] 继续生成与消息版本切换
 - [x] Markdown 对话导出
-- [ ] 剧情分支
+- [x] 多会话、剧情分支与章节点
 - [x] 上下文编译器与 Token 预估
 - [x] 内嵌及独立世界书触发和调试
 
 ## Phase 3 · 记忆与手机
 
 - [ ] 剧情摘要
-- [ ] 记忆候选与确认队列
+- [x] 手动记忆候选与确认队列
 - [ ] Phone Event JSON Schema
-- [ ] 消息、相册、备忘录
+- [x] 真实最近消息、章节点与记忆备忘录
+- [ ] 剧情相册
 - [ ] 主动消息频率和安静时段
 
 ## Phase 4 · 创作与扩展

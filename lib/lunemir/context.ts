@@ -14,6 +14,7 @@ export type ContextOptions = {
   persona?: PersonaRecord | null;
   preset?: PresetRecord | null;
   externalLoreEntries?: LorebookEntry[];
+  memories?: string[];
 };
 
 export function estimateTokens(text: string) {
@@ -70,11 +71,12 @@ export function compileContext(
     : "";
   const presetPrompt = preset ? replaceMacros(preset.systemPrompt) : "";
   const loreText = matchedLore.map(({ entry }) => `[${entry.name}]\n${entry.content}`).join("\n\n");
+  const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${memory}`).join("\n");
   const postHistory = [preset?.postHistoryInstructions, character.postHistoryInstructions]
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, characterDefinition, personaDefinition, loreText && `相关世界设定：\n${loreText}`]
+  const systemContent = [presetPrompt, characterDefinition, personaDefinition, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`]
     .filter(Boolean)
     .join("\n\n---\n\n");
 
@@ -102,6 +104,12 @@ export function compileContext(
       label: "世界书命中",
       detail: `${matchedLore.length} 个条目`,
       estimatedTokens: estimateTokens(loreText),
+    }] : []),
+    ...(memoryText ? [{
+      id: "memory",
+      label: "长期记忆",
+      detail: `${options.memories?.length ?? 0} 条已确认`,
+      estimatedTokens: estimateTokens(memoryText),
     }] : []),
     {
       id: "history",

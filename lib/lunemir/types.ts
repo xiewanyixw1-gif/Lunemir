@@ -89,12 +89,31 @@ export type StoredMessage = {
   activeAlternative?: number;
 };
 
+export type ConversationCheckpoint = {
+  id: string;
+  label: string;
+  messageId?: string;
+  createdAt: string;
+};
+
+export type ConversationMemory = {
+  id: string;
+  content: string;
+  sourceMessageId?: string;
+  status: "candidate" | "approved";
+  createdAt: string;
+};
+
 export type ConversationRecord = {
   id: string;
   schemaVersion: 1;
   characterId: string;
   title: string;
   messages: StoredMessage[];
+  parentConversationId?: string;
+  branchedFromMessageId?: string;
+  checkpoints?: ConversationCheckpoint[];
+  memories?: ConversationMemory[];
   createdAt: string;
   updatedAt: string;
 };
@@ -123,6 +142,7 @@ export type PersistedSettings = {
   activeCharacterId?: string;
   activePersonaId?: string;
   activePresetId?: string;
+  activeConversationIds?: Record<string, string>;
   lorebookAssignments?: Record<string, string[]>;
   appearance?: AppearanceSettings;
   model: ModelConfig;
@@ -188,7 +208,7 @@ export type CompiledContext = {
 
 export type LunemirBackup = {
   format: "lunemir-backup";
-  schemaVersion: 2;
+  schemaVersion: 3;
   exportedAt: string;
   characters: CharacterRecord[];
   conversations: ConversationRecord[];
