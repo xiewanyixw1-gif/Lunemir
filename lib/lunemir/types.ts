@@ -73,6 +73,8 @@ export type LorebookRecord = {
   updatedAt: string;
 };
 
+export type LorebookEditorValues = Pick<LorebookRecord, "name" | "entries">;
+
 export type PersonaRecord = {
   id: string;
   schemaVersion: 1;

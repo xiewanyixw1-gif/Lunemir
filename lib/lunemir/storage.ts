@@ -127,6 +127,10 @@ export function saveLorebook(lorebook: LorebookRecord) {
   return put(LOREBOOK_STORE, lorebook);
 }
 
+export function deleteLorebook(lorebookId: string) {
+  return remove(LOREBOOK_STORE, lorebookId);
+}
+
 export function listPersonas() {
   return getAll<PersonaRecord>(PERSONA_STORE);
 }

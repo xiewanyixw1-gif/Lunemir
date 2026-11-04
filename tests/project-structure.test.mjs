@@ -128,3 +128,22 @@ test("supports persistent character card management", async () => {
   assert.match(storage, /deleteCharacter/);
   assert.match(importer, /avatar_data_url/);
 });
+
+test("supports persistent visual lorebook management", async () => {
+  const [editor, runtime, storage, context] = await Promise.all([
+    readFile(new URL("app/components/LorebookEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+  ]);
+  assert.match(editor, /创建新世界书/);
+  assert.match(editor, /主要关键词/);
+  assert.match(editor, /组合触发/);
+  assert.match(editor, /保存世界书/);
+  assert.match(runtime, /saveLorebookProfile/);
+  assert.match(runtime, /duplicateLorebook/);
+  assert.match(runtime, /deleteLorebookProfile/);
+  assert.match(runtime, /downloadLorebook/);
+  assert.match(storage, /deleteLorebook/);
+  assert.match(context, /right\.priority - left\.priority/);
+});

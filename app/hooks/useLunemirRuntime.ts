@@ -10,6 +10,7 @@ import {
   createBackup,
   deleteCharacter as removeStoredCharacter,
   deleteConversation as removeStoredConversation,
+  deleteLorebook as removeStoredLorebook,
   deleteStoryEvents,
   getSettings,
   listCharacters,
@@ -34,6 +35,7 @@ import type {
   ContentImportPreview,
   ContextReport,
   ConversationRecord,
+  LorebookEditorValues,
   LorebookRecord,
   ModelConfig,
   PersonaRecord,
@@ -915,6 +917,137 @@ export function useLunemirRuntime() {
     refreshContext(character, messages);
   }
 
+  async function syncLorebookLibrary(nextLorebooks: LorebookRecord[], nextAssignments: Record<string, string[]>) {
+    setLorebooks(nextLorebooks);
+    setLorebookAssignments(nextAssignments);
+    contentLibraryRef.current = { lorebooks: nextLorebooks, assignments: nextAssignments };
+    const assigned = new Set(nextAssignments[activeCharacter?.id ?? ""] ?? []);
+    contextResourcesRef.current.externalLoreEntries = nextLorebooks
+      .filter((lorebook) => assigned.has(lorebook.id))
+      .flatMap((lorebook) => lorebook.entries);
+    const settings = await getSettings();
+    await saveSettings({ ...settings, lorebookAssignments: nextAssignments, updatedAt: new Date().toISOString() });
+    if (activeCharacter) refreshContext(activeCharacter, messages);
+  }
+
+  async function saveLorebookProfile(lorebookId: string | undefined, values: LorebookEditorValues) {
+    const existing = lorebookId ? lorebooks.find((lorebook) => lorebook.id === lorebookId) : undefined;
+    const now = new Date().toISOString();
+    const entries = values.entries.map((entry, index) => ({
+      ...entry,
+      id: entry.id || createId("lore"),
+      name: entry.name.trim() || `条目 ${index + 1}`,
+      keys: [...entry.keys],
+      secondaryKeys: [...entry.secondaryKeys],
+      content: entry.content.trim(),
+      insertionOrder: index,
+      extensions: { ...entry.extensions },
+    }));
+    if (!values.name.trim()) {
+      setRuntimeError("世界书名称不能为空。");
+      return null;
+    }
+    if (entries.length === 0) {
+      setRuntimeError("世界书至少需要一个条目。");
+      return null;
+    }
+    const lorebook: LorebookRecord = existing
+      ? { ...existing, name: values.name.trim(), entries, updatedAt: now }
+      : {
+          id: createId("lorebook"),
+          schemaVersion: 1,
+          name: values.name.trim(),
+          sourceName: "Created in Lunemir",
+          entries,
+          raw: {},
+          createdAt: now,
+          updatedAt: now,
+        };
+    await saveLorebook(lorebook);
+    const nextLorebooks = existing
+      ? lorebooks.map((item) => item.id === lorebook.id ? lorebook : item)
+      : [lorebook, ...lorebooks];
+    const nextAssignments = !existing && activeCharacter
+      ? {
+          ...lorebookAssignments,
+          [activeCharacter.id]: [...new Set([...(lorebookAssignments[activeCharacter.id] ?? []), lorebook.id])],
+        }
+      : lorebookAssignments;
+    await syncLorebookLibrary(nextLorebooks, nextAssignments);
+    return lorebook;
+  }
+
+  async function duplicateLorebook(lorebookId: string) {
+    const source = lorebooks.find((lorebook) => lorebook.id === lorebookId);
+    if (!source) return null;
+    const now = new Date().toISOString();
+    const duplicate: LorebookRecord = {
+      ...source,
+      id: createId("lorebook"),
+      name: `${source.name} · 副本`,
+      sourceName: source.sourceName || source.name,
+      entries: source.entries.map((entry, index) => ({
+        ...entry,
+        id: createId("lore"),
+        keys: [...entry.keys],
+        secondaryKeys: [...entry.secondaryKeys],
+        insertionOrder: index,
+        extensions: { ...entry.extensions },
+      })),
+      raw: { ...source.raw },
+      createdAt: now,
+      updatedAt: now,
+    };
+    await saveLorebook(duplicate);
+    const nextAssignments = activeCharacter
+      ? {
+          ...lorebookAssignments,
+          [activeCharacter.id]: [...new Set([...(lorebookAssignments[activeCharacter.id] ?? []), duplicate.id])],
+        }
+      : lorebookAssignments;
+    await syncLorebookLibrary([duplicate, ...lorebooks], nextAssignments);
+    return duplicate;
+  }
+
+  async function deleteLorebookProfile(lorebookId: string) {
+    const target = lorebooks.find((lorebook) => lorebook.id === lorebookId);
+    if (!target) return false;
+    await removeStoredLorebook(lorebookId);
+    const nextLorebooks = lorebooks.filter((lorebook) => lorebook.id !== lorebookId);
+    const nextAssignments = Object.fromEntries(
+      Object.entries(lorebookAssignments).map(([characterId, ids]) => [characterId, ids.filter((id) => id !== lorebookId)]),
+    );
+    await syncLorebookLibrary(nextLorebooks, nextAssignments);
+    return true;
+  }
+
+  function downloadLorebook(lorebookId: string) {
+    const lorebook = lorebooks.find((item) => item.id === lorebookId);
+    if (!lorebook) return;
+    const entries = Object.fromEntries(lorebook.entries.map((entry, index) => [String(index), {
+      uid: entry.id,
+      key: entry.keys,
+      keysecondary: entry.secondaryKeys,
+      comment: entry.name,
+      content: entry.content,
+      constant: entry.constant,
+      selective: entry.selective,
+      order: entry.priority,
+      insertion_order: entry.insertionOrder,
+      disable: !entry.enabled,
+      case_sensitive: entry.caseSensitive,
+      extensions: entry.extensions,
+    }]));
+    const payload = { ...lorebook.raw, name: lorebook.name, entries };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${lorebook.name.replace(/[\\/:*?"<>|]/g, "-") || "lunemir-world-info"}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function savePersonaProfile(name: string, description: string) {
     const now = new Date().toISOString();
     const persona: PersonaRecord = activePersona
@@ -1093,6 +1226,10 @@ export function useLunemirRuntime() {
     approveMemory: (memoryId: string) => setMemoryStatus(memoryId, "approved"),
     removeMemory: (memoryId: string) => setMemoryStatus(memoryId, "remove"),
     toggleLorebookAssignment,
+    saveLorebookProfile,
+    duplicateLorebook,
+    deleteLorebookProfile,
+    downloadLorebook,
     savePersonaProfile,
     activatePreset,
     sendMessage,

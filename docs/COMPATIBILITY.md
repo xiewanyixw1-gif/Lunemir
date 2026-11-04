@@ -37,6 +37,9 @@ v0.2 支持：
 - 支持以 `entries` 对象或数组为核心的 World Info JSON；
 - 读取 `key`、`keysecondary`、`comment`、`content`、`constant`、`order`、`disable` 与大小写选项；
 - 导入后自动绑定当前角色，之后可以逐本启停；
+- 支持新建、编辑、复制、删除和导出独立世界书；
+- 编辑器可管理主次关键词、内容、常驻、组合触发、启用状态、大小写匹配、优先级和条目顺序；
+- 新建和复制的世界书默认绑定当前角色，删除时从全部角色绑定中安全移除；
 - 支持包含 `prompts`、`prompt_order` 和 OpenAI 常用采样字段的聊天预设；
 - 应用 `temperature`、`openai_max_tokens`、`openai_max_context`，并保留完整原始 JSON。
 

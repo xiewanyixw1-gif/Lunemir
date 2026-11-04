@@ -4,11 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
+import { LorebookEditorModal } from "./LorebookEditorModal";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
 type DragTarget = "button" | "panel";
 type CharacterEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
+type LorebookEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
@@ -52,6 +54,7 @@ export function LunemirPrototype() {
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
+  const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
   const [draft, setDraft] = useState("");
   const [personaName, setPersonaName] = useState("");
   const [personaDescription, setPersonaDescription] = useState("");
@@ -106,6 +109,9 @@ export function LunemirPrototype() {
   const lastMessageContent = runtime.messages.at(-1)?.content ?? "";
   const editorCharacter = characterEditor?.mode === "edit"
     ? runtime.characters.find((character) => character.id === characterEditor.id)
+    : undefined;
+  const editorLorebook = lorebookEditor?.mode === "edit"
+    ? runtime.lorebooks.find((lorebook) => lorebook.id === lorebookEditor.id)
     : undefined;
 
   useEffect(() => {
@@ -364,7 +370,7 @@ export function LunemirPrototype() {
           <div className="content-view">
             <div className="view-heading">
               <div><span className="eyebrow">LOREBOOKS</span><h2>让世界拥有连续的记忆</h2></div>
-              <button className="primary-button" onClick={() => setImportOpen(true)}>导入世界书</button>
+              <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入 JSON</button><button className="primary-button" onClick={() => setLorebookEditor({ mode: "create" })}>新建世界书</button></div>
             </div>
             <div className="lore-list">
               {(runtime.activeCharacter?.lorebookEntries.length ?? 0) > 0 && <span className="lore-section-label">角色卡内嵌世界书</span>}
@@ -383,7 +389,7 @@ export function LunemirPrototype() {
                     <span className="lore-color" style={{ background: ["#69dcff", "#a990ff", "#ff90c7"][index % 3] }} />
                     <div><strong>{book.name}</strong><small>{book.entries.length} 个条目 · {book.sourceName}</small></div>
                     <div className="lore-meter"><i style={{ width: `${Math.min(100, 18 + book.entries.length * 4)}%` }} /></div>
-                    <button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? "已启用" : "启用"}</button>
+                    <div className="lore-actions"><button className="lore-manage" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}>管理</button><button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? "已启用" : "启用"}</button></div>
                   </article>
                 );
               })}
@@ -602,6 +608,27 @@ export function LunemirPrototype() {
           onDelete={editorCharacter ? async () => {
             if (!window.confirm(`删除角色“${editorCharacter.name}”及其全部会话、手机事件和记忆？此操作无法撤销。`)) return;
             if (await runtime.deleteCharacterProfile(editorCharacter.id)) setCharacterEditor(null);
+          } : undefined}
+        />
+      )}
+
+      {lorebookEditor && (
+        <LorebookEditorModal
+          key={lorebookEditor.mode === "edit" ? lorebookEditor.id : "new-lorebook"}
+          lorebook={editorLorebook}
+          onClose={() => setLorebookEditor(null)}
+          onSave={async (values) => {
+            const saved = await runtime.saveLorebookProfile(lorebookEditor.mode === "edit" ? lorebookEditor.id : undefined, values);
+            if (saved) setLorebookEditor(null);
+          }}
+          onDuplicate={editorLorebook ? async () => {
+            const duplicate = await runtime.duplicateLorebook(editorLorebook.id);
+            if (duplicate) setLorebookEditor({ mode: "edit", id: duplicate.id });
+          } : undefined}
+          onExport={editorLorebook ? () => runtime.downloadLorebook(editorLorebook.id) : undefined}
+          onDelete={editorLorebook ? async () => {
+            if (!window.confirm(`删除世界书“${editorLorebook.name}”？它会同时从所有角色的启用列表中移除。`)) return;
+            if (await runtime.deleteLorebookProfile(editorLorebook.id)) setLorebookEditor(null);
           } : undefined}
         />
       )}
