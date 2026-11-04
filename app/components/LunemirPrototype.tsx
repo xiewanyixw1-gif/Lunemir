@@ -1,10 +1,12 @@
 "use client";
 
-import { CSSProperties, FormEvent, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
 type PhoneApp = "messages" | "album" | "notes" | "settings";
+type DragTarget = "button" | "panel";
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
@@ -37,6 +39,9 @@ export function LunemirPrototype() {
   const [section, setSection] = useState<Section>("chat");
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
+  const [phoneButtonPosition, setPhoneButtonPosition] = useState<{ x: number; y: number } | null>(null);
+  const [phonePanelPosition, setPhonePanelPosition] = useState<{ x: number; y: number } | null>(null);
+  const [draggingPhone, setDraggingPhone] = useState<DragTarget | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
@@ -45,6 +50,18 @@ export function LunemirPrototype() {
   const [personaDescription, setPersonaDescription] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
+  const phoneDragRef = useRef<{
+    target: DragTarget;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    width: number;
+    height: number;
+    moved: boolean;
+  } | null>(null);
+  const suppressPhoneClickRef = useRef(false);
 
   const pageTitle = useMemo(
     () => navItems.find((item) => item.id === section)?.label ?? "对话",
@@ -68,6 +85,58 @@ export function LunemirPrototype() {
     "--panel-opacity": runtime.appearance.opacity / 100,
     "--panel-radius": `${runtime.appearance.radius}px`,
   } as CSSProperties;
+  const activeBackground = runtime.appearance.backgroundMode === "custom"
+    ? runtime.appearance.backgroundImage
+    : runtime.appearance.backgroundMode === "character"
+      ? runtime.activeCharacter?.avatarDataUrl
+      : undefined;
+
+  function beginPhoneDrag(event: ReactPointerEvent<HTMLElement>, target: DragTarget) {
+    if (event.button !== 0) return;
+    const element = target === "panel"
+      ? event.currentTarget.closest<HTMLElement>(".phone-shell")
+      : event.currentTarget;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    phoneDragRef.current = {
+      target,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      width: rect.width,
+      height: rect.height,
+      moved: false,
+    };
+    suppressPhoneClickRef.current = false;
+    setDraggingPhone(target);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function movePhoneDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = phoneDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (Math.abs(deltaX) + Math.abs(deltaY) > 4) drag.moved = true;
+    const padding = 8;
+    const next = {
+      x: Math.min(window.innerWidth - drag.width - padding, Math.max(padding, drag.originX + deltaX)),
+      y: Math.min(window.innerHeight - drag.height - padding, Math.max(padding, drag.originY + deltaY)),
+    };
+    if (drag.target === "button") setPhoneButtonPosition(next);
+    else setPhonePanelPosition(next);
+  }
+
+  function endPhoneDrag(event: ReactPointerEvent<HTMLElement>) {
+    const drag = phoneDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    suppressPhoneClickRef.current = drag.target === "button" && drag.moved;
+    phoneDragRef.current = null;
+    setDraggingPhone(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+  }
 
   function closeImport() {
     setImportOpen(false);
@@ -104,7 +173,8 @@ export function LunemirPrototype() {
   }
 
   return (
-    <main className="lunemir-app" data-theme={runtime.appearance.theme} style={appearanceStyle}>
+    <main className="lunemir-app" data-theme={runtime.appearance.theme} data-glass-mode={runtime.appearance.glassMode} data-section={section} style={appearanceStyle}>
+      <div className={activeBackground ? "scene-background has-image" : "scene-background"} style={activeBackground ? { backgroundImage: `url("${activeBackground}")` } : undefined} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
@@ -301,6 +371,23 @@ export function LunemirPrototype() {
                 </button>
               ))}
             </div>
+            <div className="appearance-mode-grid">
+              <section className="appearance-mode-card">
+                <div><span className="eyebrow">GLASS LAYOUT</span><h3>毛玻璃范围</h3><p>全屏模式更统一；消息框模式会露出更多背景，更适合沉浸式聊天。</p></div>
+                <div className="segmented-control">
+                  <button className={runtime.appearance.glassMode === "full" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, glassMode: "full" })}>全屏毛玻璃</button>
+                  <button className={runtime.appearance.glassMode === "messages" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, glassMode: "messages" })}>消息框毛玻璃</button>
+                </div>
+              </section>
+              <section className="appearance-mode-card">
+                <div><span className="eyebrow">SCENE BACKGROUND</span><h3>聊天背景</h3><p>背景只保存在当前设备；角色卡没有图片时会自动使用 Lunemir 默认渐变。</p></div>
+                <div className="background-actions">
+                  <button className={runtime.appearance.backgroundMode === "character" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, backgroundMode: "character" })}>角色卡图片</button>
+                  <button className={runtime.appearance.backgroundMode === "gradient" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, backgroundMode: "gradient" })}>默认渐变</button>
+                  <label className={runtime.appearance.backgroundMode === "custom" ? "is-active" : ""}>自定义图片<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runtime.saveCustomBackground(file); event.currentTarget.value = ""; }} /></label>
+                </div>
+              </section>
+            </div>
             <div className="slider-panel">
               <label><span>玻璃模糊度 <b>{runtime.appearance.blur}px</b></span><input type="range" min="4" max="36" value={runtime.appearance.blur} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, blur: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} /></label>
               <label><span>面板透明度 <b>{runtime.appearance.opacity}%</b></span><input type="range" min="25" max="92" value={runtime.appearance.opacity} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, opacity: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} /></label>
@@ -356,13 +443,27 @@ export function LunemirPrototype() {
 
       {runtime.runtimeError && <div className="runtime-toast" role="alert"><span>!</span><p>{runtime.runtimeError}</p><button onClick={runtime.clearRuntimeError} aria-label="关闭错误提示">×</button></div>}
 
-      <button className={phoneOpen ? "phone-fab is-active" : "phone-fab"} onClick={() => setPhoneOpen(!phoneOpen)} aria-label="打开悬浮小手机">
+      <button
+        className={`${phoneOpen ? "phone-fab is-active" : "phone-fab"}${draggingPhone === "button" ? " is-dragging" : ""}`}
+        style={phoneButtonPosition ? { left: phoneButtonPosition.x, top: phoneButtonPosition.y, right: "auto", bottom: "auto" } : undefined}
+        onPointerDown={(event) => beginPhoneDrag(event, "button")}
+        onPointerMove={movePhoneDrag}
+        onPointerUp={endPhoneDrag}
+        onPointerCancel={endPhoneDrag}
+        onClick={() => { if (suppressPhoneClickRef.current) { suppressPhoneClickRef.current = false; return; } setPhoneOpen(!phoneOpen); }}
+        aria-label="打开或拖动悬浮小手机"
+      >
         <span className="phone-outline"><i /></span><b>2</b>
       </button>
 
-      <section className={phoneOpen ? "phone-shell is-open" : "phone-shell"} aria-label="Lunemir 悬浮小手机" aria-hidden={!phoneOpen}>
+      <section
+        className={`${phoneOpen ? "phone-shell is-open" : "phone-shell"}${draggingPhone === "panel" ? " is-dragging" : ""}`}
+        style={phonePanelPosition ? { left: phonePanelPosition.x, top: phonePanelPosition.y, right: "auto", bottom: "auto" } : undefined}
+        aria-label="Lunemir 悬浮小手机"
+        aria-hidden={!phoneOpen}
+      >
         <div className="phone-frame">
-          <div className="phone-status"><span>22:43</span><i /><span>◒</span></div>
+          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>22:43</span><i /><span>◒</span></div>
           <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{activeName} · 本地会话</span></div>
           <div className="phone-apps">
             {(["messages", "album", "notes", "settings"] as PhoneApp[]).map((app) => {

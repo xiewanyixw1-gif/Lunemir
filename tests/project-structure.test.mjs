@@ -71,7 +71,11 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(runtime, /selectMessageAlternative/);
   assert.match(runtime, /saveAppearance/);
   assert.match(runtime, /downloadConversation/);
+  assert.match(runtime, /saveCustomBackground/);
   assert.match(prototype, /重新生成/);
   assert.match(prototype, /继续生成/);
   assert.match(prototype, /导出记录/);
+  assert.match(prototype, /onPointerDown/);
+  assert.match(prototype, /全屏毛玻璃/);
+  assert.match(prototype, /角色卡图片/);
 });

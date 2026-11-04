@@ -64,12 +64,21 @@ async function loadOrCreateConversation(character: CharacterRecord) {
 
 function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSettings {
   const theme = value?.theme === "aurora" || value?.theme === "rose" ? value.theme : "moon";
+  const glassMode = value?.glassMode === "messages" ? "messages" : "full";
+  const backgroundMode = value?.backgroundMode === "gradient" || value?.backgroundMode === "custom"
+    ? value.backgroundMode
+    : "character";
   const numberOr = (candidate: number | undefined, fallback: number) => Number.isFinite(candidate) ? Number(candidate) : fallback;
   return {
     theme,
     blur: Math.min(36, Math.max(4, numberOr(value?.blur, DEFAULT_APPEARANCE.blur))),
     opacity: Math.min(92, Math.max(25, numberOr(value?.opacity, DEFAULT_APPEARANCE.opacity))),
     radius: Math.min(36, Math.max(10, numberOr(value?.radius, DEFAULT_APPEARANCE.radius))),
+    glassMode,
+    backgroundMode,
+    backgroundImage: typeof value?.backgroundImage === "string" && value.backgroundImage.startsWith("data:image/")
+      ? value.backgroundImage
+      : undefined,
   };
 }
 
@@ -508,6 +517,28 @@ export function useLunemirRuntime() {
     setAppearance(normalizeAppearance(nextAppearance));
   }
 
+  async function saveCustomBackground(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setRuntimeError("请选择 JPG、PNG、WebP 等图片文件。");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setRuntimeError("背景图片不能超过 8 MB。");
+      return;
+    }
+    try {
+      const backgroundImage = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("无法读取背景图片。"));
+        reader.onerror = () => reject(reader.error ?? new Error("无法读取背景图片。"));
+        reader.readAsDataURL(file);
+      });
+      await saveAppearance({ ...appearance, backgroundMode: "custom", backgroundImage });
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "无法保存背景图片。");
+    }
+  }
+
   async function testConnection() {
     setConnectionStatus("testing");
     setRuntimeError("");
@@ -586,6 +617,7 @@ export function useLunemirRuntime() {
     appearance,
     previewAppearance,
     saveAppearance,
+    saveCustomBackground,
     modelConfig,
     setModelConfig,
     apiKey,

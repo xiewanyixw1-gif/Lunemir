@@ -112,6 +112,9 @@ export type AppearanceSettings = {
   blur: number;
   opacity: number;
   radius: number;
+  glassMode: "full" | "messages";
+  backgroundMode: "gradient" | "character" | "custom";
+  backgroundImage?: string;
 };
 
 export type PersistedSettings = {

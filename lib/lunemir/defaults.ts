@@ -13,6 +13,8 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   blur: 24,
   opacity: 64,
   radius: 26,
+  glassMode: "full",
+  backgroundMode: "character",
 };
 
 export function createId(prefix: string) {
