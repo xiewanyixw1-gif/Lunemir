@@ -21,29 +21,38 @@ function asNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
+  const entries = Array.isArray(rawEntries)
+    ? rawEntries
+    : Object.values(asRecord(rawEntries));
+
+  return entries.map((entry, index): LorebookEntry => {
+    const source = asRecord(entry);
+    const order = asNumber(source.order, index);
+    const defaultPriority = typeof source.order === "number" ? order : 50;
+    return {
+      id: String(source.id ?? source.uid ?? createId("lore")),
+      name: asString(source.name) || asString(source.comment) || `条目 ${index + 1}`,
+      keys: asStringArray(source.keys ?? source.key),
+      secondaryKeys: asStringArray(source.secondary_keys ?? source.keysecondary),
+      content: asString(source.content),
+      enabled: source.enabled !== false && source.disable !== true,
+      constant: source.constant === true,
+      selective: source.selective === true,
+      priority: asNumber(source.priority, defaultPriority),
+      insertionOrder: asNumber(source.insertion_order, order),
+      caseSensitive: source.case_sensitive === true || source.caseSensitive === true,
+      extensions: asRecord(source.extensions),
+    };
+  });
+}
+
 function normalizeLorebook(data: UnknownRecord) {
   const book = asRecord(data.character_book);
-  const entries = Array.isArray(book.entries) ? book.entries : [];
 
   return {
     name: asString(book.name) || "角色内置世界书",
-    entries: entries.map((entry, index): LorebookEntry => {
-      const source = asRecord(entry);
-      return {
-        id: String(source.id ?? createId("lore")),
-        name: asString(source.name) || asString(source.comment) || `条目 ${index + 1}`,
-        keys: asStringArray(source.keys ?? source.key),
-        secondaryKeys: asStringArray(source.secondary_keys ?? source.keysecondary),
-        content: asString(source.content),
-        enabled: source.enabled !== false,
-        constant: source.constant === true,
-        selective: source.selective === true,
-        priority: asNumber(source.priority, 50),
-        insertionOrder: asNumber(source.insertion_order, index),
-        caseSensitive: source.case_sensitive === true,
-        extensions: asRecord(source.extensions),
-      };
-    }),
+    entries: normalizeLorebookEntries(book.entries),
   };
 }
 

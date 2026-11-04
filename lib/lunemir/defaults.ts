@@ -1,4 +1,4 @@
-import type { CharacterRecord, ModelConfig } from "./types";
+import type { CharacterRecord, ModelConfig, PersonaRecord } from "./types";
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   baseUrl: "",
@@ -72,6 +72,18 @@ export function createSampleCharacter(): CharacterRecord {
     ],
     extensions: {},
     raw: {},
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+export function createDefaultPersona(): PersonaRecord {
+  const now = new Date().toISOString();
+  return {
+    id: createId("persona"),
+    schemaVersion: 1,
+    name: "旅行者",
+    description: "一位谨慎而好奇的旅行者。请不要替我决定行动或内心想法。",
     createdAt: now,
     updatedAt: now,
   };

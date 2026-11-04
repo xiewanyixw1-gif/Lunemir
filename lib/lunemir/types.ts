@@ -45,12 +45,46 @@ export type CharacterRecord = {
   updatedAt: string;
 };
 
+export type LorebookRecord = {
+  id: string;
+  schemaVersion: 1;
+  name: string;
+  sourceName: string;
+  entries: LorebookEntry[];
+  raw: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PersonaRecord = {
+  id: string;
+  schemaVersion: 1;
+  name: string;
+  description: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type PresetRecord = {
+  id: string;
+  schemaVersion: 1;
+  name: string;
+  sourceName: string;
+  systemPrompt: string;
+  postHistoryInstructions: string;
+  modelPatch: Partial<Pick<ModelConfig, "temperature" | "maxTokens" | "contextLimit">>;
+  raw: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type StoredMessage = {
   id: string;
   role: Role;
   content: string;
   createdAt: string;
   status?: "complete" | "streaming" | "stopped" | "error";
+  editedAt?: string;
 };
 
 export type ConversationRecord = {
@@ -75,6 +109,9 @@ export type PersistedSettings = {
   key: "app";
   schemaVersion: 1;
   activeCharacterId?: string;
+  activePersonaId?: string;
+  activePresetId?: string;
+  lorebookAssignments?: Record<string, string[]>;
   model: ModelConfig;
   updatedAt: string;
 };
@@ -83,6 +120,26 @@ export type ImportPreview = {
   character: CharacterRecord;
   warnings: string[];
   detectedSpec: string;
+};
+
+export type ContentImportPreview = {
+  kind: "character";
+  record: CharacterRecord;
+  warnings: string[];
+  detectedFormat: string;
+  summary: string;
+} | {
+  kind: "lorebook";
+  record: LorebookRecord;
+  warnings: string[];
+  detectedFormat: string;
+  summary: string;
+} | {
+  kind: "preset";
+  record: PresetRecord;
+  warnings: string[];
+  detectedFormat: string;
+  summary: string;
 };
 
 export type ContextSegment = {
@@ -118,9 +175,12 @@ export type CompiledContext = {
 
 export type LunemirBackup = {
   format: "lunemir-backup";
-  schemaVersion: 1;
+  schemaVersion: 2;
   exportedAt: string;
   characters: CharacterRecord[];
   conversations: ConversationRecord[];
+  lorebooks: LorebookRecord[];
+  personas: PersonaRecord[];
+  presets: PresetRecord[];
   settings?: PersistedSettings;
 };

@@ -10,10 +10,10 @@
 
 ## Phase 1 · 本地内容基础
 
-- [x] IndexedDB 数据库与 v1 Schema
-- [x] Character / Conversation / Lorebook 领域模型
+- [x] IndexedDB 数据库与 v2 增量迁移
+- [x] Character / Conversation / Persona / Lorebook / Preset 领域模型
 - [x] 角色卡 V1 / V2 / V3 PNG / JSON 解析器
-- [ ] 世界书与预设导入预览
+- [x] 独立世界书与聊天预设导入预览
 - [x] JSON 本地备份和恢复
 - [ ] 主题变量持久化
 
@@ -21,10 +21,11 @@
 
 - [x] OpenAI-compatible Provider
 - [x] 流式生成与中止
-- [ ] 编辑、重生成、继续生成
+- [x] 消息编辑与最后回复重新生成
+- [ ] 继续生成与消息版本切换
 - [ ] 剧情分支
 - [x] 上下文编译器与 Token 预估
-- [x] 内嵌世界书触发和调试
+- [x] 内嵌及独立世界书触发和调试
 
 ## Phase 3 · 记忆与手机
 

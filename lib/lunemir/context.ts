@@ -2,10 +2,19 @@ import type {
   CharacterRecord,
   CompiledContext,
   ContextSegment,
+  LorebookEntry,
   MatchedLore,
   ModelMessage,
+  PersonaRecord,
+  PresetRecord,
   StoredMessage,
 } from "./types";
+
+export type ContextOptions = {
+  persona?: PersonaRecord | null;
+  preset?: PresetRecord | null;
+  externalLoreEntries?: LorebookEntry[];
+};
 
 export function estimateTokens(text: string) {
   const cjk = (text.match(/[\u3400-\u9fff]/g) ?? []).length;
@@ -13,8 +22,8 @@ export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(cjk * 1.15 + other / 4));
 }
 
-function matchesLore(character: CharacterRecord, transcript: string): MatchedLore[] {
-  return character.lorebookEntries
+function matchesLore(entries: LorebookEntry[], transcript: string): MatchedLore[] {
+  return entries
     .filter((entry) => entry.enabled)
     .filter((entry) => {
       if (entry.constant) return true;
@@ -39,19 +48,33 @@ export function compileContext(
   character: CharacterRecord,
   messages: StoredMessage[],
   contextLimit: number,
+  options: ContextOptions = {},
 ): CompiledContext {
+  const persona = options.persona;
+  const preset = options.preset;
+  const replaceMacros = (value: string) => value
+    .replaceAll(/{{char}}/gi, character.name)
+    .replaceAll(/{{user}}/gi, persona?.name || "用户");
   const transcript = messages.slice(-24).map((message) => message.content).join("\n");
-  const matchedLore = matchesLore(character, transcript);
+  const allLoreEntries = [...character.lorebookEntries, ...(options.externalLoreEntries ?? [])];
+  const matchedLore = matchesLore(allLoreEntries, transcript);
   const characterDefinition = [
     `你正在扮演 ${character.name}。`,
     character.description,
     character.personality && `性格：${character.personality}`,
     character.scenario && `当前场景：${character.scenario}`,
     character.systemPrompt,
-  ].filter(Boolean).join("\n\n");
+  ].filter(Boolean).map(replaceMacros).join("\n\n");
+  const personaDefinition = persona
+    ? `与您互动的用户人设是 ${persona.name}。\n${replaceMacros(persona.description)}`
+    : "";
+  const presetPrompt = preset ? replaceMacros(preset.systemPrompt) : "";
   const loreText = matchedLore.map(({ entry }) => `[${entry.name}]\n${entry.content}`).join("\n\n");
-  const postHistory = character.postHistoryInstructions;
-  const systemContent = [characterDefinition, loreText && `相关世界设定：\n${loreText}`]
+  const postHistory = [preset?.postHistoryInstructions, character.postHistoryInstructions]
+    .filter(Boolean)
+    .map((value) => replaceMacros(value ?? ""))
+    .join("\n\n");
+  const systemContent = [presetPrompt, characterDefinition, personaDefinition, loreText && `相关世界设定：\n${loreText}`]
     .filter(Boolean)
     .join("\n\n---\n\n");
 
@@ -62,6 +85,18 @@ export function compileContext(
       detail: `${character.name} · ${character.spec.toUpperCase()}`,
       estimatedTokens: estimateTokens(characterDefinition),
     },
+    ...(personaDefinition ? [{
+      id: "persona",
+      label: "用户人设",
+      detail: persona?.name ?? "用户",
+      estimatedTokens: estimateTokens(personaDefinition),
+    }] : []),
+    ...(presetPrompt ? [{
+      id: "preset",
+      label: "提示词预设",
+      detail: preset?.name ?? "Preset",
+      estimatedTokens: estimateTokens(presetPrompt),
+    }] : []),
     ...(loreText ? [{
       id: "lore",
       label: "世界书命中",

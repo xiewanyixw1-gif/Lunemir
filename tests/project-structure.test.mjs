@@ -32,6 +32,10 @@ test("ships a local-first persistence and backup layer", async () => {
   assert.match(storage, /lunemir-backup/);
   assert.match(storage, /CHARACTER_STORE/);
   assert.match(storage, /CONVERSATION_STORE/);
+  assert.match(storage, /LOREBOOK_STORE/);
+  assert.match(storage, /PERSONA_STORE/);
+  assert.match(storage, /PRESET_STORE/);
+  assert.match(storage, /schemaVersion: 2/);
 });
 
 test("supports real character cards and compatible streaming", async () => {
@@ -48,4 +52,20 @@ test("supports real character cards and compatible streaming", async () => {
   assert.match(client, /text\/event-stream/);
   assert.match(context, /matchedLore/);
   assert.match(context, /estimatedTokens/);
+});
+
+test("supports standalone content and conversation controls", async () => {
+  const [contentImport, runtime, prototype] = await Promise.all([
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+  ]);
+
+  assert.match(contentImport, /kind: "lorebook"/);
+  assert.match(contentImport, /kind: "preset"/);
+  assert.match(contentImport, /openai_max_context/);
+  assert.match(runtime, /toggleLorebookAssignment/);
+  assert.match(runtime, /savePersonaProfile/);
+  assert.match(runtime, /regenerateLastReply/);
+  assert.match(prototype, /重新生成/);
 });

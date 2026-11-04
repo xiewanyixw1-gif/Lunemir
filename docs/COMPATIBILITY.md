@@ -11,7 +11,7 @@ v0.2 支持：
 - 角色卡内嵌 `character_book`、备用开场白、扩展字段和 PNG 头像；
 - 导入前预览、格式提示与 20 MB 文件上限。
 
-尚未支持独立世界书文件、预设、角色卡资源包、压缩备份以及 iTXt/zTXt PNG 元数据。导入不会执行 HTML 或 JavaScript，也不会覆盖已有角色。
+尚未支持角色卡资源包、压缩备份以及 iTXt/zTXt PNG 元数据。导入不会执行 HTML 或 JavaScript，也不会覆盖已有角色。
 
 实现参考：
 
@@ -30,6 +30,16 @@ v0.2 支持：
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可在模型 ID 正确时发起聊天。
 
+## 独立世界书与预设
+
+- 支持以 `entries` 对象或数组为核心的 World Info JSON；
+- 读取 `key`、`keysecondary`、`comment`、`content`、`constant`、`order`、`disable` 与大小写选项；
+- 导入后自动绑定当前角色，之后可以逐本启停；
+- 支持包含 `prompts`、`prompt_order` 和 OpenAI 常用采样字段的聊天预设；
+- 应用 `temperature`、`openai_max_tokens`、`openai_max_context`，并保留完整原始 JSON。
+
+复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+
 ## 本地数据
 
-IndexedDB v1 保存角色、每个角色的当前会话和非敏感设置。API Key 只保留在页面内存，不写入数据库或备份。当前备份格式为 `lunemir-backup` v1 JSON；恢复操作会替换当前浏览器内的 Lunemir 数据。
+IndexedDB v2 保存角色、每个角色的当前会话、世界书、人设、预设和非敏感设置。API Key 只保留在页面内存，不写入数据库或备份。当前备份格式为 `lunemir-backup` v2 JSON，同时可恢复 v1 备份；恢复操作会替换当前浏览器内的 Lunemir 数据。

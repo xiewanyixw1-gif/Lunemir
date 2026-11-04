@@ -38,9 +38,14 @@ export function LunemirPrototype() {
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
   const [importOpen, setImportOpen] = useState(false);
+  const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [theme, setTheme] = useState("moon");
   const [draft, setDraft] = useState("");
+  const [personaName, setPersonaName] = useState("");
+  const [personaDescription, setPersonaDescription] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState("");
+  const [editingMessageText, setEditingMessageText] = useState("");
 
   const pageTitle = useMemo(
     () => navItems.find((item) => item.id === section)?.label ?? "对话",
@@ -64,6 +69,31 @@ export function LunemirPrototype() {
     setImportOpen(false);
     runtime.clearImport();
   }
+
+  function openPersonaEditor() {
+    setPersonaName(runtime.activePersona?.name ?? "旅行者");
+    setPersonaDescription(runtime.activePersona?.description ?? "");
+    setPersonaOpen(true);
+  }
+
+  function beginMessageEdit(messageId: string, content: string) {
+    setEditingMessageId(messageId);
+    setEditingMessageText(content);
+  }
+
+  async function saveMessageEdit() {
+    if (!editingMessageId || !editingMessageText.trim()) return;
+    await runtime.editMessage(editingMessageId, editingMessageText);
+    setEditingMessageId("");
+    setEditingMessageText("");
+  }
+
+  const importAvatar = runtime.importPreview?.kind === "character"
+    ? runtime.importPreview.record.avatarDataUrl
+    : undefined;
+  const importAction = runtime.importPreview
+    ? ({ character: "导入角色", lorebook: "导入并启用", preset: "导入并应用" } as const)[runtime.importPreview.kind]
+    : "确认导入";
 
   if (!runtime.ready) {
     return <main className="lunemir-loading"><span className="brand-crescent" /><p>正在打开你的世界…</p></main>;
@@ -92,8 +122,8 @@ export function LunemirPrototype() {
             </button>
           ))}
         </nav>
-        <button className="profile-button" aria-label="用户人设：旅行者">
-          Y
+        <button className="profile-button" onClick={openPersonaEditor} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`}>
+          {(runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
         </button>
       </aside>
 
@@ -128,17 +158,29 @@ export function LunemirPrototype() {
             <div className="message-list" aria-live="polite">
               <div className="date-divider"><span>今天</span></div>
               {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
-              {runtime.messages.map((message) => message.status === "streaming" && !message.content ? (
+              {runtime.messages.map((message, index) => message.status === "streaming" && !message.content ? (
                 <div key={message.id} className="typing-bubble" aria-label={`${activeName} 正在输入`}><i /><i /><i /></div>
               ) : (
                 <article key={message.id} className={message.role === "user" ? "message user-message" : "message character-message"}>
                   <div className="message-meta">
-                    <strong>{message.role === "user" ? "You" : activeName}</strong>
+                    <strong>{message.role === "user" ? runtime.activePersona?.name ?? "You" : activeName}</strong>
                     <time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>
+                    {message.editedAt && <em>已编辑</em>}
                     {message.status === "stopped" && <em>已停止</em>}
                     {message.status === "error" && <em>失败</em>}
                   </div>
-                  <p>{message.content}</p>
+                  {editingMessageId === message.id ? (
+                    <div className="message-editor">
+                      <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
+                      <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
+                    </div>
+                  ) : <p>{message.content}</p>}
+                  {!runtime.streaming && editingMessageId !== message.id && (
+                    <div className="message-actions">
+                      <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
+                      {message.role === "assistant" && index === runtime.messages.length - 1 && <button onClick={() => void runtime.regenerateLastReply()}>重新生成</button>}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
@@ -197,9 +239,10 @@ export function LunemirPrototype() {
           <div className="content-view">
             <div className="view-heading">
               <div><span className="eyebrow">LOREBOOKS</span><h2>让世界拥有连续的记忆</h2></div>
-              <button className="primary-button" disabled>独立导入 · 即将支持</button>
+              <button className="primary-button" onClick={() => setImportOpen(true)}>导入世界书</button>
             </div>
             <div className="lore-list">
+              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) > 0 && <span className="lore-section-label">角色卡内嵌世界书</span>}
               {(runtime.activeCharacter?.lorebookEntries ?? []).map((entry, index) => (
                 <article className="lore-row" key={entry.id}>
                   <span className="lore-color" style={{ background: ["#a990ff", "#69dcff", "#ff90c7"][index % 3] }} />
@@ -208,7 +251,19 @@ export function LunemirPrototype() {
                   <button aria-label={`查看${entry.name}`}>→</button>
                 </article>
               ))}
-              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) === 0 && <div className="empty-state"><span>⌑</span><strong>当前角色没有内置世界书</strong><p>世界书独立导入将在下一阶段加入。</p></div>}
+              {runtime.lorebooks.length > 0 && <span className="lore-section-label">独立世界书 · 点击控制当前角色是否启用</span>}
+              {runtime.lorebooks.map((book, index) => {
+                const enabled = runtime.activeLorebooks.some((item) => item.id === book.id);
+                return (
+                  <article className={enabled ? "lore-row standalone is-enabled" : "lore-row standalone"} key={book.id}>
+                    <span className="lore-color" style={{ background: ["#69dcff", "#a990ff", "#ff90c7"][index % 3] }} />
+                    <div><strong>{book.name}</strong><small>{book.entries.length} 个条目 · {book.sourceName}</small></div>
+                    <div className="lore-meter"><i style={{ width: `${Math.min(100, 18 + book.entries.length * 4)}%` }} /></div>
+                    <button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? "已启用" : "启用"}</button>
+                  </article>
+                );
+              })}
+              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) === 0 && runtime.lorebooks.length === 0 && <div className="empty-state"><span>⌑</span><strong>还没有世界书</strong><p>导入 World Info JSON 后会自动为当前角色启用。</p></div>}
             </div>
           </div>
         )}
@@ -248,6 +303,10 @@ export function LunemirPrototype() {
               <label>上下文窗口<input type="number" min="1024" max="2000000" step="1024" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /></label>
               <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
             </div>
+            <div className="data-card preset-card">
+              <div><span className="eyebrow">PROMPT PRESET</span><h3>提示词预设</h3><p>导入聊天预设会读取已启用的系统提示词，并应用 Temperature、输出长度和上下文窗口。</p></div>
+              <div><select value={runtime.activePreset?.id ?? ""} onChange={(event) => void runtime.activatePreset(event.target.value)} aria-label="选择提示词预设"><option value="">不使用预设</option>{runtime.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select><button onClick={() => setImportOpen(true)}>导入预设</button></div>
+            </div>
             <div className="data-card">
               <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天和设置保存在当前浏览器。导出备份后可以迁移到其他设备。</p></div>
               <div><button onClick={() => void runtime.downloadBackup()}>导出备份</button><label className="restore-button">恢复备份<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm("恢复备份会替换当前浏览器中的 Lunemir 数据，是否继续？")) void runtime.restoreFromBackup(file); event.currentTarget.value = ""; }} /></label></div>
@@ -260,8 +319,8 @@ export function LunemirPrototype() {
         <div className="context-heading"><div><span className="eyebrow">CONTEXT</span><h2>真实上下文预估</h2></div><button onClick={() => setContextOpen(false)} aria-label="关闭上下文">×</button></div>
         <div className="token-ring" style={{ background: `conic-gradient(var(--accent) 0 ${tokenUsage}%, rgba(255,255,255,.06) ${tokenUsage}% 100%)` }}><span><strong>{runtime.contextReport?.estimatedTokens.toLocaleString() ?? 0}</strong><small>/ {runtime.contextReport?.limit.toLocaleString() ?? 0} tokens</small></span></div>
         <div className="context-block">
-          <div className="block-title"><span>当前人设</span><button>编辑</button></div>
-          <article className="persona-card"><span>Y</span><div><strong>旅行者</strong><small>正在与 {activeName} 对话</small></div></article>
+          <div className="block-title"><span>当前人设</span><button onClick={openPersonaEditor}>编辑</button></div>
+          <article className="persona-card"><span>{(runtime.activePersona?.name ?? "Y").charAt(0)}</span><div><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>正在与 {activeName} 对话</small></div></article>
         </div>
         <div className="context-block">
           <div className="block-title"><span>世界书命中</span><em>{runtime.contextReport?.matchedLore.length ?? 0}</em></div>
@@ -285,7 +344,7 @@ export function LunemirPrototype() {
       <section className={phoneOpen ? "phone-shell is-open" : "phone-shell"} aria-label="Lunemir 悬浮小手机" aria-hidden={!phoneOpen}>
         <div className="phone-frame">
           <div className="phone-status"><span>22:43</span><i /><span>◒</span></div>
-          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，旅行者</strong><span>{activeName} · 本地会话</span></div>
+          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{activeName} · 本地会话</span></div>
           <div className="phone-apps">
             {(["messages", "album", "notes", "settings"] as PhoneApp[]).map((app) => {
               const data = { messages: ["✦", "消息"], album: ["◫", "相册"], notes: ["⌑", "备忘"], settings: ["⚙", "设置"] }[app];
@@ -309,16 +368,31 @@ export function LunemirPrototype() {
             <span className="modal-icon">⇧</span>
             <span className="eyebrow">IMPORT CENTER</span>
             <h2 id="import-title">把熟悉的世界带进来</h2>
-            <p>支持 V1/V2/V3 角色卡 JSON，以及带有 chara 或 ccv3 数据块的 PNG。导入会创建新角色，不覆盖已有内容。</p>
+            <p>自动识别 V1/V2/V3 角色卡、World Info 世界书和聊天预设。导入前会先预览，不会覆盖已有内容。</p>
             <label className="drop-zone">
               <input type="file" accept=".png,.json,application/json,image/png" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runtime.parseImport(file); }} />
-              <strong>{runtime.importPreview?.character.sourceName || "拖放文件，或点击选择"}</strong>
+              <strong>{runtime.importPreview?.record.sourceName || "拖放文件，或点击选择"}</strong>
               <small>PNG、JSON · 单个文件最大 20 MB</small>
             </label>
             {runtime.importError && <div className="import-result is-error"><i>!</i><span><strong>无法导入</strong><small>{runtime.importError}</small></span></div>}
-            {runtime.importPreview && <div className="import-preview"><div className="preview-avatar" style={runtime.importPreview.character.avatarDataUrl ? { backgroundImage: `url(${runtime.importPreview.character.avatarDataUrl})` } : undefined}>{runtime.importPreview.character.avatarDataUrl ? "" : runtime.importPreview.character.name.charAt(0)}</div><div><span>{runtime.importPreview.detectedSpec}</span><strong>{runtime.importPreview.character.name}</strong><small>{runtime.importPreview.character.description.slice(0, 90) || "没有角色描述"}</small></div></div>}
+            {runtime.importPreview && <div className="import-preview"><div className={`preview-avatar ${runtime.importPreview.kind}`} style={importAvatar ? { backgroundImage: `url(${importAvatar})` } : undefined}>{importAvatar ? "" : runtime.importPreview.kind === "character" ? runtime.importPreview.record.name.charAt(0) : runtime.importPreview.kind === "lorebook" ? "⌑" : "✦"}</div><div><span>{runtime.importPreview.detectedFormat}</span><strong>{runtime.importPreview.record.name}</strong><small>{runtime.importPreview.summary}</small></div></div>}
             {runtime.importPreview?.warnings.map((warning) => <p className="import-warning" key={warning}>{warning}</p>)}
-            <div className="modal-actions"><button onClick={closeImport}>取消</button><button className="primary-button" disabled={!runtime.importPreview} onClick={() => { void runtime.confirmImport(); setImportOpen(false); }}>导入角色</button></div>
+            <div className="modal-actions"><button onClick={closeImport}>取消</button><button className="primary-button" disabled={!runtime.importPreview} onClick={() => { void runtime.confirmImport(); setImportOpen(false); }}>{importAction}</button></div>
+          </section>
+        </div>
+      )}
+
+      {personaOpen && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={() => setPersonaOpen(false)}>
+          <section className="persona-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="persona-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button className="modal-close" onClick={() => setPersonaOpen(false)} aria-label="关闭">×</button>
+            <span className="modal-icon">◇</span>
+            <span className="eyebrow">USER PERSONA</span>
+            <h2 id="persona-title">你想以谁的身份进入故事？</h2>
+            <p>人设会作为上下文发送给模型，并在所有角色对话中使用。</p>
+            <label>显示名称<input value={personaName} onChange={(event) => setPersonaName(event.target.value)} maxLength={60} /></label>
+            <label>人设描述<textarea value={personaDescription} onChange={(event) => setPersonaDescription(event.target.value)} rows={6} placeholder="身份、性格、外貌，以及希望角色如何称呼你…" /></label>
+            <div className="modal-actions"><button onClick={() => setPersonaOpen(false)}>取消</button><button className="primary-button" onClick={() => { void runtime.savePersonaProfile(personaName, personaDescription); setPersonaOpen(false); }}>保存人设</button></div>
           </section>
         </div>
       )}

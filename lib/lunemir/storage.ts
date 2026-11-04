@@ -2,15 +2,21 @@ import { DEFAULT_MODEL_CONFIG } from "./defaults";
 import type {
   CharacterRecord,
   ConversationRecord,
+  LorebookRecord,
   LunemirBackup,
+  PersonaRecord,
   PersistedSettings,
+  PresetRecord,
 } from "./types";
 
 const DATABASE_NAME = "lunemir";
-const DATABASE_VERSION = 1;
+const DATABASE_VERSION = 2;
 const CHARACTER_STORE = "characters";
 const CONVERSATION_STORE = "conversations";
 const SETTINGS_STORE = "settings";
+const LOREBOOK_STORE = "lorebooks";
+const PERSONA_STORE = "personas";
+const PRESET_STORE = "presets";
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -50,6 +56,15 @@ export function openLunemirDatabase() {
         if (!database.objectStoreNames.contains(SETTINGS_STORE)) {
           database.createObjectStore(SETTINGS_STORE, { keyPath: "key" });
         }
+        if (!database.objectStoreNames.contains(LOREBOOK_STORE)) {
+          database.createObjectStore(LOREBOOK_STORE, { keyPath: "id" });
+        }
+        if (!database.objectStoreNames.contains(PERSONA_STORE)) {
+          database.createObjectStore(PERSONA_STORE, { keyPath: "id" });
+        }
+        if (!database.objectStoreNames.contains(PRESET_STORE)) {
+          database.createObjectStore(PRESET_STORE, { keyPath: "id" });
+        }
       };
 
       request.onsuccess = () => resolve(request.result);
@@ -83,6 +98,30 @@ export function saveCharacter(character: CharacterRecord) {
   return put(CHARACTER_STORE, character);
 }
 
+export function listLorebooks() {
+  return getAll<LorebookRecord>(LOREBOOK_STORE);
+}
+
+export function saveLorebook(lorebook: LorebookRecord) {
+  return put(LOREBOOK_STORE, lorebook);
+}
+
+export function listPersonas() {
+  return getAll<PersonaRecord>(PERSONA_STORE);
+}
+
+export function savePersona(persona: PersonaRecord) {
+  return put(PERSONA_STORE, persona);
+}
+
+export function listPresets() {
+  return getAll<PresetRecord>(PRESET_STORE);
+}
+
+export function savePreset(preset: PresetRecord) {
+  return put(PRESET_STORE, preset);
+}
+
 export async function getConversation(characterId: string) {
   const database = await openLunemirDatabase();
   const transaction = database.transaction(CONVERSATION_STORE, "readonly");
@@ -112,27 +151,40 @@ export function saveSettings(settings: PersistedSettings) {
 }
 
 export async function createBackup(): Promise<LunemirBackup> {
-  const [characters, conversations, settings] = await Promise.all([
+  const [characters, conversations, lorebooks, personas, presets, settings] = await Promise.all([
     listCharacters(),
     getAll<ConversationRecord>(CONVERSATION_STORE),
+    listLorebooks(),
+    listPersonas(),
+    listPresets(),
     getSettings(),
   ]);
 
   return {
     format: "lunemir-backup",
-    schemaVersion: 1,
+    schemaVersion: 2,
     exportedAt: new Date().toISOString(),
     characters,
     conversations,
+    lorebooks,
+    personas,
+    presets,
     settings,
   };
 }
 
-function isBackup(value: unknown): value is LunemirBackup {
+type RestorableBackup = Omit<LunemirBackup, "schemaVersion" | "lorebooks" | "personas" | "presets"> & {
+  schemaVersion: 1 | 2;
+  lorebooks?: LorebookRecord[];
+  personas?: PersonaRecord[];
+  presets?: PresetRecord[];
+};
+
+function isBackup(value: unknown): value is RestorableBackup {
   if (!value || typeof value !== "object") return false;
-  const candidate = value as Partial<LunemirBackup>;
+  const candidate = value as Partial<RestorableBackup>;
   return candidate.format === "lunemir-backup"
-    && candidate.schemaVersion === 1
+    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2)
     && Array.isArray(candidate.characters)
     && Array.isArray(candidate.conversations);
 }
@@ -145,18 +197,27 @@ export async function restoreBackup(file: File) {
 
   const database = await openLunemirDatabase();
   const transaction = database.transaction(
-    [CHARACTER_STORE, CONVERSATION_STORE, SETTINGS_STORE],
+    [CHARACTER_STORE, CONVERSATION_STORE, SETTINGS_STORE, LOREBOOK_STORE, PERSONA_STORE, PRESET_STORE],
     "readwrite",
   );
 
   const characters = transaction.objectStore(CHARACTER_STORE);
   const conversations = transaction.objectStore(CONVERSATION_STORE);
   const settings = transaction.objectStore(SETTINGS_STORE);
+  const lorebooks = transaction.objectStore(LOREBOOK_STORE);
+  const personas = transaction.objectStore(PERSONA_STORE);
+  const presets = transaction.objectStore(PRESET_STORE);
   characters.clear();
   conversations.clear();
   settings.clear();
+  lorebooks.clear();
+  personas.clear();
+  presets.clear();
   parsed.characters.forEach((character) => characters.put(character));
   parsed.conversations.forEach((conversation) => conversations.put(conversation));
+  (parsed.lorebooks ?? []).forEach((lorebook) => lorebooks.put(lorebook));
+  (parsed.personas ?? []).forEach((persona) => personas.put(persona));
+  (parsed.presets ?? []).forEach((preset) => presets.put(preset));
   if (parsed.settings) settings.put(parsed.settings);
   await transactionDone(transaction);
 }
