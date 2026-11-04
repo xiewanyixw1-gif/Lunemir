@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { CSSProperties, FormEvent, useMemo, useState } from "react";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
@@ -40,7 +40,6 @@ export function LunemirPrototype() {
   const [importOpen, setImportOpen] = useState(false);
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
-  const [theme, setTheme] = useState("moon");
   const [draft, setDraft] = useState("");
   const [personaName, setPersonaName] = useState("");
   const [personaDescription, setPersonaDescription] = useState("");
@@ -64,6 +63,11 @@ export function LunemirPrototype() {
   const tokenUsage = runtime.contextReport
     ? Math.min(100, Math.round(runtime.contextReport.estimatedTokens / runtime.contextReport.limit * 100))
     : 0;
+  const appearanceStyle = {
+    "--glass-blur": `${runtime.appearance.blur}px`,
+    "--panel-opacity": runtime.appearance.opacity / 100,
+    "--panel-radius": `${runtime.appearance.radius}px`,
+  } as CSSProperties;
 
   function closeImport() {
     setImportOpen(false);
@@ -100,7 +104,7 @@ export function LunemirPrototype() {
   }
 
   return (
-    <main className="lunemir-app" data-theme={theme}>
+    <main className="lunemir-app" data-theme={runtime.appearance.theme} style={appearanceStyle}>
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
@@ -152,7 +156,7 @@ export function LunemirPrototype() {
                 <h2>{activeName}</h2>
                 <p>{runtime.activeCharacter?.scenario || runtime.activeCharacter?.description || "等待故事开始"}</p>
               </div>
-              <button className="chapter-button">消息记录 <span>{runtime.messages.length}</span></button>
+              <button className="chapter-button" onClick={runtime.downloadConversation}>导出记录 <span>{runtime.messages.length}</span></button>
             </div>
 
             <div className="message-list" aria-live="polite">
@@ -178,7 +182,22 @@ export function LunemirPrototype() {
                   {!runtime.streaming && editingMessageId !== message.id && (
                     <div className="message-actions">
                       <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
-                      {message.role === "assistant" && index === runtime.messages.length - 1 && <button onClick={() => void runtime.regenerateLastReply()}>重新生成</button>}
+                      {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
+                    </div>
+                  )}
+                  {(message.alternatives?.length ?? 0) > 1 && editingMessageId !== message.id && (
+                    <div className="message-versions" aria-label="回复版本切换">
+                      <button
+                        onClick={() => void runtime.selectMessageAlternative(message.id, Math.max(0, (message.activeAlternative ?? 0) - 1))}
+                        disabled={(message.activeAlternative ?? 0) === 0 || runtime.streaming}
+                        aria-label="上一个回复版本"
+                      >‹</button>
+                      <span>{(message.activeAlternative ?? 0) + 1} / {message.alternatives?.length}</span>
+                      <button
+                        onClick={() => void runtime.selectMessageAlternative(message.id, Math.min((message.alternatives?.length ?? 1) - 1, (message.activeAlternative ?? 0) + 1))}
+                        disabled={(message.activeAlternative ?? 0) >= (message.alternatives?.length ?? 1) - 1 || runtime.streaming}
+                        aria-label="下一个回复版本"
+                      >›</button>
                     </div>
                   )}
                 </article>
@@ -276,16 +295,16 @@ export function LunemirPrototype() {
             </div>
             <div className="theme-grid">
               {themeOptions.map((option) => (
-                <button key={option.id} className={theme === option.id ? "theme-card is-selected" : "theme-card"} onClick={() => setTheme(option.id)}>
+                <button key={option.id} className={runtime.appearance.theme === option.id ? "theme-card is-selected" : "theme-card"} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, theme: option.id as "moon" | "aurora" | "rose" })}>
                   <span className="theme-preview" style={{ background: `linear-gradient(145deg, ${option.colors.join(",")})` }}><i /><i /></span>
-                  <strong>{option.name}</strong><small>{theme === option.id ? "正在使用" : "应用主题"}</small>
+                  <strong>{option.name}</strong><small>{runtime.appearance.theme === option.id ? "正在使用" : "应用主题"}</small>
                 </button>
               ))}
             </div>
             <div className="slider-panel">
-              <label>玻璃模糊度 <input type="range" min="4" max="30" defaultValue="18" /></label>
-              <label>面板透明度 <input type="range" min="25" max="90" defaultValue="64" /></label>
-              <label>圆角强度 <input type="range" min="10" max="32" defaultValue="22" /></label>
+              <label><span>玻璃模糊度 <b>{runtime.appearance.blur}px</b></span><input type="range" min="4" max="36" value={runtime.appearance.blur} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, blur: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} /></label>
+              <label><span>面板透明度 <b>{runtime.appearance.opacity}%</b></span><input type="range" min="25" max="92" value={runtime.appearance.opacity} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, opacity: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} /></label>
+              <label><span>圆角强度 <b>{runtime.appearance.radius}px</b></span><input type="range" min="10" max="36" value={runtime.appearance.radius} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, radius: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} /></label>
             </div>
           </div>
         )}

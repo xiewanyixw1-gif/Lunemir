@@ -1,4 +1,4 @@
-import type { CharacterRecord, ModelConfig, PersonaRecord } from "./types";
+import type { AppearanceSettings, CharacterRecord, ModelConfig, PersonaRecord } from "./types";
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   baseUrl: "",
@@ -6,6 +6,13 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   temperature: 0.8,
   maxTokens: 1200,
   contextLimit: 32000,
+};
+
+export const DEFAULT_APPEARANCE: AppearanceSettings = {
+  theme: "moon",
+  blur: 24,
+  opacity: 64,
+  radius: 26,
 };
 
 export function createId(prefix: string) {

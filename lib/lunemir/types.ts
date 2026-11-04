@@ -85,6 +85,8 @@ export type StoredMessage = {
   createdAt: string;
   status?: "complete" | "streaming" | "stopped" | "error";
   editedAt?: string;
+  alternatives?: string[];
+  activeAlternative?: number;
 };
 
 export type ConversationRecord = {
@@ -105,6 +107,13 @@ export type ModelConfig = {
   contextLimit: number;
 };
 
+export type AppearanceSettings = {
+  theme: "moon" | "aurora" | "rose";
+  blur: number;
+  opacity: number;
+  radius: number;
+};
+
 export type PersistedSettings = {
   key: "app";
   schemaVersion: 1;
@@ -112,6 +121,7 @@ export type PersistedSettings = {
   activePersonaId?: string;
   activePresetId?: string;
   lorebookAssignments?: Record<string, string[]>;
+  appearance?: AppearanceSettings;
   model: ModelConfig;
   updatedAt: string;
 };

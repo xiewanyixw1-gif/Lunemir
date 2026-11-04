@@ -67,5 +67,11 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(runtime, /toggleLorebookAssignment/);
   assert.match(runtime, /savePersonaProfile/);
   assert.match(runtime, /regenerateLastReply/);
+  assert.match(runtime, /continueLastReply/);
+  assert.match(runtime, /selectMessageAlternative/);
+  assert.match(runtime, /saveAppearance/);
+  assert.match(runtime, /downloadConversation/);
   assert.match(prototype, /重新生成/);
+  assert.match(prototype, /继续生成/);
+  assert.match(prototype, /导出记录/);
 });

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
-import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
+import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
 import { streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
 import {
   createBackup,
@@ -22,6 +22,7 @@ import {
   saveSettings,
 } from "../../lib/lunemir/storage";
 import type {
+  AppearanceSettings,
   CharacterRecord,
   ContentImportPreview,
   ContextReport,
@@ -61,6 +62,17 @@ async function loadOrCreateConversation(character: CharacterRecord) {
   return conversation;
 }
 
+function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSettings {
+  const theme = value?.theme === "aurora" || value?.theme === "rose" ? value.theme : "moon";
+  const numberOr = (candidate: number | undefined, fallback: number) => Number.isFinite(candidate) ? Number(candidate) : fallback;
+  return {
+    theme,
+    blur: Math.min(36, Math.max(4, numberOr(value?.blur, DEFAULT_APPEARANCE.blur))),
+    opacity: Math.min(92, Math.max(25, numberOr(value?.opacity, DEFAULT_APPEARANCE.opacity))),
+    radius: Math.min(36, Math.max(10, numberOr(value?.radius, DEFAULT_APPEARANCE.radius))),
+  };
+}
+
 export function useLunemirRuntime() {
   const [ready, setReady] = useState(false);
   const [characters, setCharacters] = useState<CharacterRecord[]>([]);
@@ -74,6 +86,7 @@ export function useLunemirRuntime() {
   const [conversation, setConversation] = useState<ConversationRecord | null>(null);
   const [messages, setMessages] = useState<StoredMessage[]>([]);
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
+  const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE);
   const [apiKey, setApiKey] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "connected" | "error">("idle");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -179,6 +192,7 @@ export function useLunemirRuntime() {
         .flatMap((lorebook) => lorebook.entries),
     };
     const nextModel = settings.model ?? DEFAULT_MODEL_CONFIG;
+    setAppearance(normalizeAppearance(settings.appearance));
     contextLimitRef.current = nextModel.contextLimit;
     setModelConfig(nextModel);
     if (settings.activePersonaId !== selectedPersona.id) {
@@ -211,19 +225,31 @@ export function useLunemirRuntime() {
     return false;
   }
 
-  async function generateReply(requestMessages: StoredMessage[]) {
+  async function generateReply(
+    requestMessages: StoredMessage[],
+    target: { mode: "new" } | { mode: "replace" | "append"; message: StoredMessage } = { mode: "new" },
+  ) {
     const character = activeCharacter;
     if (!character || !conversation || streaming) return;
     setRuntimeError("");
     if (!modelIsReady()) return;
-    const assistantMessage: StoredMessage = {
-      id: createId("message"),
-      role: "assistant",
-      content: "",
-      createdAt: new Date().toISOString(),
-      status: "streaming",
-    };
-    const visibleMessages = [...requestMessages, assistantMessage];
+    const sourceMessage = target.mode === "new" ? null : target.message;
+    const previousAlternatives = sourceMessage
+      ? (sourceMessage.alternatives?.length ? sourceMessage.alternatives : [sourceMessage.content])
+      : [];
+    const prefix = target.mode === "append" ? target.message.content : "";
+    const assistantMessage: StoredMessage = sourceMessage
+      ? { ...sourceMessage, content: prefix, status: "streaming" }
+      : {
+          id: createId("message"),
+          role: "assistant",
+          content: "",
+          createdAt: new Date().toISOString(),
+          status: "streaming",
+        };
+    const visibleMessages = target.mode === "append"
+      ? requestMessages.map((message) => message.id === assistantMessage.id ? assistantMessage : message)
+      : [...requestMessages, assistantMessage];
     setMessages(visibleMessages);
     await persistMessages(visibleMessages);
 
@@ -238,26 +264,50 @@ export function useLunemirRuntime() {
       await streamChatCompletion({
         config: modelConfig,
         apiKey,
-        messages: compiled.messages,
+        messages: target.mode === "append"
+          ? [...compiled.messages, { role: "system", content: "请无缝继续上一条角色回复，不要重复已经写出的内容。" }]
+          : compiled.messages,
         signal: controller.signal,
         onDelta: (delta) => {
           assistantText += delta;
           setMessages((current) => current.map((message) => message.id === assistantMessage.id
-            ? { ...message, content: assistantText }
+            ? { ...message, content: `${prefix}${assistantText}` }
             : message));
         },
       });
       if (!assistantText.trim()) throw new Error("模型没有返回文本内容。");
+      const completedContent = `${prefix}${assistantText}`;
       const completed = visibleMessages.map((message) => message.id === assistantMessage.id
-        ? { ...message, content: assistantText, status: "complete" as const }
+        ? {
+            ...message,
+            content: completedContent,
+            status: "complete" as const,
+            ...(target.mode === "replace"
+              ? { alternatives: [...previousAlternatives, completedContent], activeAlternative: previousAlternatives.length }
+              : target.mode === "append" && message.alternatives?.length
+                ? {
+                    alternatives: message.alternatives.map((alternative, index) => index === (message.activeAlternative ?? 0) ? completedContent : alternative),
+                  }
+                : {}),
+          }
         : message);
       setMessages(completed);
       await persistMessages(completed);
       refreshContext(character, completed);
     } catch (error) {
       const stopped = error instanceof DOMException && error.name === "AbortError";
+      const partialContent = `${prefix}${assistantText}`;
       const failed = visibleMessages.map((message) => message.id === assistantMessage.id
-        ? { ...message, content: assistantText || (stopped ? "" : "生成失败"), status: stopped ? "stopped" as const : "error" as const }
+        ? target.mode === "replace" && !assistantText
+          ? { ...target.message, status: "complete" as const }
+          : {
+              ...message,
+              content: partialContent || (stopped ? "" : "生成失败"),
+              status: stopped ? "stopped" as const : "error" as const,
+              ...(target.mode === "replace" && assistantText
+                ? { alternatives: [...previousAlternatives, partialContent], activeAlternative: previousAlternatives.length }
+                : {}),
+            }
         : message);
       setMessages(failed);
       await persistMessages(failed);
@@ -287,9 +337,12 @@ export function useLunemirRuntime() {
   async function editMessage(messageId: string, content: string) {
     const character = activeCharacter;
     if (!character || streaming || !content.trim()) return;
-    const nextMessages = messages.map((message) => message.id === messageId
-      ? { ...message, content: content.trim(), editedAt: new Date().toISOString(), status: "complete" as const }
-      : message);
+    const nextMessages = messages.map((message) => {
+      if (message.id !== messageId) return message;
+      const nextContent = content.trim();
+      const alternatives = message.alternatives?.map((alternative, index) => index === (message.activeAlternative ?? 0) ? nextContent : alternative);
+      return { ...message, content: nextContent, alternatives, editedAt: new Date().toISOString(), status: "complete" as const };
+    });
     setMessages(nextMessages);
     await persistMessages(nextMessages);
     refreshContext(character, nextMessages);
@@ -303,7 +356,33 @@ export function useLunemirRuntime() {
       setRuntimeError("发送一条用户消息后才能重新生成回复。");
       return;
     }
+    if (lastMessage?.role === "assistant") {
+      await generateReply(requestMessages, { mode: "replace", message: lastMessage });
+      return;
+    }
     await generateReply(requestMessages);
+  }
+
+  async function continueLastReply() {
+    if (streaming || !modelIsReady()) return;
+    const lastMessage = messages.at(-1);
+    if (!lastMessage || lastMessage.role !== "assistant" || !lastMessage.content.trim()) {
+      setRuntimeError("需要先有一条角色回复，才能继续生成。");
+      return;
+    }
+    await generateReply(messages, { mode: "append", message: lastMessage });
+  }
+
+  async function selectMessageAlternative(messageId: string, alternativeIndex: number) {
+    const character = activeCharacter;
+    if (!character || streaming) return;
+    const nextMessages = messages.map((message) => {
+      if (message.id !== messageId || !message.alternatives?.[alternativeIndex]) return message;
+      return { ...message, content: message.alternatives[alternativeIndex], activeAlternative: alternativeIndex, status: "complete" as const };
+    });
+    setMessages(nextMessages);
+    await persistMessages(nextMessages);
+    refreshContext(character, nextMessages);
   }
 
   async function parseImport(file: File) {
@@ -418,6 +497,17 @@ export function useLunemirRuntime() {
     setRuntimeError("");
   }
 
+  async function saveAppearance(nextAppearance: AppearanceSettings) {
+    const normalized = normalizeAppearance(nextAppearance);
+    setAppearance(normalized);
+    const settings = await getSettings();
+    await saveSettings({ ...settings, appearance: normalized, updatedAt: new Date().toISOString() });
+  }
+
+  function previewAppearance(nextAppearance: AppearanceSettings) {
+    setAppearance(normalizeAppearance(nextAppearance));
+  }
+
   async function testConnection() {
     setConnectionStatus("testing");
     setRuntimeError("");
@@ -439,6 +529,31 @@ export function useLunemirRuntime() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = `lunemir-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function downloadConversation() {
+    const character = activeCharacter;
+    if (!character) return;
+    const personaName = activePersona?.name ?? "You";
+    const lines = [
+      `# 与 ${character.name} 的对话`,
+      "",
+      `> 导出时间：${new Date().toLocaleString("zh-CN")}`,
+      "",
+      ...messages.flatMap((message) => [
+        `## ${message.role === "user" ? personaName : character.name}`,
+        "",
+        message.content,
+        "",
+      ]),
+    ];
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `lunemir-${character.name.replace(/[\\/:*?"<>|]/g, "-")}-${new Date().toISOString().slice(0, 10)}.md`;
     anchor.click();
     URL.revokeObjectURL(url);
   }
@@ -468,6 +583,9 @@ export function useLunemirRuntime() {
     runtimeError,
     clearRuntimeError: () => setRuntimeError(""),
     contextReport,
+    appearance,
+    previewAppearance,
+    saveAppearance,
     modelConfig,
     setModelConfig,
     apiKey,
@@ -486,10 +604,13 @@ export function useLunemirRuntime() {
     sendMessage,
     editMessage,
     regenerateLastReply,
+    continueLastReply,
+    selectMessageAlternative,
     stopGeneration: () => abortRef.current?.abort(),
     saveModel,
     testConnection,
     downloadBackup,
+    downloadConversation,
     restoreFromBackup,
   };
 }
