@@ -45,6 +45,23 @@ export type CharacterRecord = {
   updatedAt: string;
 };
 
+export type CharacterEditorValues = Pick<CharacterRecord,
+  | "name"
+  | "nickname"
+  | "description"
+  | "personality"
+  | "scenario"
+  | "firstMessage"
+  | "exampleMessages"
+  | "systemPrompt"
+  | "postHistoryInstructions"
+  | "tags"
+  | "creator"
+  | "characterVersion"
+  | "creatorNotes"
+  | "avatarDataUrl"
+>;
+
 export type LorebookRecord = {
   id: string;
   schemaVersion: 1;

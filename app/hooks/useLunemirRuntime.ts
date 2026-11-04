@@ -8,6 +8,7 @@ import { generateChatCompletion, streamChatCompletion, testModelConnection } fro
 import { createStoryEvent, isDuplicatePhoneEvent, parsePhoneMessageProposal } from "../../lib/lunemir/story-events";
 import {
   createBackup,
+  deleteCharacter as removeStoredCharacter,
   deleteConversation as removeStoredConversation,
   deleteStoryEvents,
   getSettings,
@@ -29,6 +30,7 @@ import {
 import type {
   AppearanceSettings,
   CharacterRecord,
+  CharacterEditorValues,
   ContentImportPreview,
   ContextReport,
   ConversationRecord,
@@ -295,6 +297,160 @@ export function useLunemirRuntime() {
     if (streaming) return;
     const nextConversation = conversations.find((item) => item.id === conversationId);
     if (nextConversation) await activateConversationRecord(nextConversation);
+  }
+
+  async function saveCharacterProfile(characterId: string | undefined, values: CharacterEditorValues) {
+    const existing = characterId ? characters.find((character) => character.id === characterId) : undefined;
+    const now = new Date().toISOString();
+    const normalized: CharacterEditorValues = {
+      ...values,
+      name: values.name.trim(),
+      nickname: values.nickname.trim(),
+      tags: values.tags.map((tag) => tag.trim()).filter(Boolean),
+      creator: values.creator.trim(),
+      characterVersion: values.characterVersion.trim() || "1.0",
+    };
+    if (!normalized.name) {
+      setRuntimeError("角色名称不能为空。");
+      return null;
+    }
+    const character: CharacterRecord = existing
+      ? { ...existing, ...normalized, updatedAt: now }
+      : {
+          id: createId("character"),
+          schemaVersion: 1,
+          spec: "v2",
+          specVersion: "2.0",
+          sourceFormat: "lunemir-editor",
+          sourceName: "Created in Lunemir",
+          ...normalized,
+          alternateGreetings: [],
+          lorebookName: "",
+          lorebookEntries: [],
+          extensions: {},
+          raw: {},
+          createdAt: now,
+          updatedAt: now,
+        };
+    await saveCharacter(character);
+    const nextCharacters = existing
+      ? characters.map((item) => item.id === character.id ? character : item)
+      : [character, ...characters];
+    setCharacters(nextCharacters);
+    if (activeCharacter?.id === character.id) refreshContext(character, messages);
+    return character;
+  }
+
+  async function duplicateCharacter(characterId: string) {
+    const source = characters.find((character) => character.id === characterId);
+    if (!source) return null;
+    const now = new Date().toISOString();
+    const duplicate: CharacterRecord = {
+      ...source,
+      id: createId("character"),
+      name: `${source.name} · 副本`,
+      sourceFormat: "lunemir-copy",
+      sourceName: source.sourceName || source.name,
+      characterVersion: source.characterVersion || "1.0",
+      tags: [...source.tags],
+      alternateGreetings: [...source.alternateGreetings],
+      lorebookEntries: source.lorebookEntries.map((entry) => ({
+        ...entry,
+        keys: [...entry.keys],
+        secondaryKeys: [...entry.secondaryKeys],
+        extensions: { ...entry.extensions },
+      })),
+      raw: { ...source.raw },
+      extensions: { ...source.extensions },
+      createdAt: now,
+      updatedAt: now,
+    };
+    await saveCharacter(duplicate);
+    setCharacters((items) => [duplicate, ...items]);
+    return duplicate;
+  }
+
+  async function deleteCharacterProfile(characterId: string) {
+    if (characters.length <= 1) {
+      setRuntimeError("至少需要保留一个角色。");
+      return false;
+    }
+    const target = characters.find((character) => character.id === characterId);
+    if (!target) return false;
+    const targetConversations = await listConversations(characterId);
+    await Promise.all(targetConversations.map(async (item) => {
+      await deleteStoryEvents(item.id);
+      await removeStoredConversation(item.id);
+    }));
+    await removeStoredCharacter(characterId);
+    const remaining = characters.filter((character) => character.id !== characterId);
+    setCharacters(remaining);
+    const settings = await getSettings();
+    const activeConversationIds = { ...(settings.activeConversationIds ?? {}) };
+    delete activeConversationIds[characterId];
+    await saveSettings({
+      ...settings,
+      activeCharacterId: settings.activeCharacterId === characterId ? remaining[0].id : settings.activeCharacterId,
+      activeConversationIds,
+      updatedAt: new Date().toISOString(),
+    });
+    if (activeCharacter?.id === characterId) await selectCharacter(remaining[0]);
+    return true;
+  }
+
+  function downloadCharacter(characterId: string) {
+    const character = characters.find((item) => item.id === characterId);
+    if (!character) return;
+    const existingLunemirExtensions = character.extensions.lunemir;
+    const lunemirExtensions = existingLunemirExtensions && typeof existingLunemirExtensions === "object" && !Array.isArray(existingLunemirExtensions)
+      ? existingLunemirExtensions as Record<string, unknown>
+      : {};
+    const payload = {
+      spec: "chara_card_v2",
+      spec_version: "2.0",
+      data: {
+        name: character.name,
+        description: character.description,
+        personality: character.personality,
+        scenario: character.scenario,
+        first_mes: character.firstMessage,
+        mes_example: character.exampleMessages,
+        creator_notes: character.creatorNotes,
+        system_prompt: character.systemPrompt,
+        post_history_instructions: character.postHistoryInstructions,
+        alternate_greetings: character.alternateGreetings,
+        tags: character.tags,
+        creator: character.creator,
+        character_version: character.characterVersion,
+        extensions: {
+          ...character.extensions,
+          lunemir: {
+            ...lunemirExtensions,
+            ...(character.avatarDataUrl ? { avatar_data_url: character.avatarDataUrl } : {}),
+          },
+        },
+        character_book: character.lorebookEntries.length > 0 ? {
+          name: character.lorebookName || `${character.name} Lorebook`,
+          entries: character.lorebookEntries.map((entry) => ({
+            keys: entry.keys,
+            secondary_keys: entry.secondaryKeys,
+            content: entry.content,
+            enabled: entry.enabled,
+            constant: entry.constant,
+            selective: entry.selective,
+            insertion_order: entry.insertionOrder,
+            extensions: { ...entry.extensions, priority: entry.priority },
+          })),
+        } : undefined,
+      },
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${character.name.replace(/[\\/:*?"<>|]/g, "-")}.json`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   async function createNewConversation() {
@@ -923,6 +1079,10 @@ export function useLunemirRuntime() {
     parseImport,
     confirmImport,
     selectCharacter,
+    saveCharacterProfile,
+    duplicateCharacter,
+    deleteCharacterProfile,
+    downloadCharacter,
     selectConversation,
     createNewConversation,
     branchConversation,

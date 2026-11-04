@@ -110,3 +110,21 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(prototype, /全屏毛玻璃/);
   assert.match(prototype, /角色卡图片/);
 });
+
+test("supports persistent character card management", async () => {
+  const [editor, runtime, storage, importer] = await Promise.all([
+    readFile(new URL("app/components/CharacterEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+  ]);
+  assert.match(editor, /创建新角色/);
+  assert.match(editor, /高级提示词/);
+  assert.match(editor, /导出 V2 JSON/);
+  assert.match(runtime, /saveCharacterProfile/);
+  assert.match(runtime, /duplicateCharacter/);
+  assert.match(runtime, /deleteCharacterProfile/);
+  assert.match(runtime, /downloadCharacter/);
+  assert.match(storage, /deleteCharacter/);
+  assert.match(importer, /avatar_data_url/);
+});

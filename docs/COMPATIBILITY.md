@@ -10,6 +10,8 @@ v0.2 支持：
 - 同一 PNG 同时包含 `ccv3` 和 `chara` 时优先读取 `ccv3`；
 - 角色卡内嵌 `character_book`、备用开场白、扩展字段和 PNG 头像；
 - 导入前预览、格式提示与 20 MB 文件上限。
+- 支持在角色页新建、编辑、复制和删除角色，并导出 Character Card V2 JSON；
+- Lunemir JSON 导出会在扩展字段保存 Data URL 头像，重新导入时可恢复，其他应用可以安全忽略该扩展。
 
 尚未支持角色卡资源包、压缩备份以及 iTXt/zTXt PNG 元数据。导入不会执行 HTML 或 JavaScript，也不会覆盖已有角色。
 
@@ -42,4 +44,4 @@ v0.2 支持：
 
 ## 本地数据
 
-IndexedDB v3 保存角色、每个角色的多会话与剧情分支、章节点、长期记忆、世界书、人设、预设和非敏感设置。API Key 只保留在页面内存，不写入数据库或备份。当前备份格式为 `lunemir-backup` v3 JSON，同时可恢复 v1 与 v2 备份；恢复操作会替换当前浏览器内的 Lunemir 数据。
+IndexedDB v4 保存角色、每个角色的多会话与剧情分支、章节点、长期记忆、Story Event、世界书、人设、预设和非敏感设置。API Key 只保留在页面内存，不写入数据库或备份。当前备份格式为 `lunemir-backup` v4 JSON，同时可恢复 v1、v2 与 v3 备份；恢复操作会替换当前浏览器内的 Lunemir 数据。

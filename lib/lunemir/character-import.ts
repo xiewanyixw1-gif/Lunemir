@@ -69,6 +69,9 @@ export function normalizeCharacterCard(
   const spec = specName === "chara_card_v3" ? "v3" : specName === "chara_card_v2" ? "v2" : "v1";
   const specVersion = asString(raw.spec_version) || (spec === "v1" ? "1.0" : spec === "v2" ? "2.0" : "3.0");
   const lorebook = normalizeLorebook(data);
+  const extensions = asRecord(data.extensions);
+  const lunemirExtensions = asRecord(extensions.lunemir);
+  const embeddedAvatar = asString(lunemirExtensions.avatar_data_url);
   const warnings: string[] = [];
   const name = asString(data.name).trim();
 
@@ -101,10 +104,10 @@ export function normalizeCharacterCard(
     creator: asString(data.creator),
     characterVersion: asString(data.character_version),
     creatorNotes: asString(data.creator_notes),
-    avatarDataUrl,
+    avatarDataUrl: avatarDataUrl ?? (embeddedAvatar.startsWith("data:image/") ? embeddedAvatar : undefined),
     lorebookName: lorebook.name,
     lorebookEntries: lorebook.entries,
-    extensions: asRecord(data.extensions),
+    extensions,
     raw,
     createdAt: now,
     updatedAt: now,

@@ -3,10 +3,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
+import { CharacterEditorModal } from "./CharacterEditorModal";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
 type DragTarget = "button" | "panel";
+type CharacterEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
@@ -49,6 +51,7 @@ export function LunemirPrototype() {
   const [conversationTitle, setConversationTitle] = useState("");
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [draft, setDraft] = useState("");
   const [personaName, setPersonaName] = useState("");
   const [personaDescription, setPersonaDescription] = useState("");
@@ -101,6 +104,9 @@ export function LunemirPrototype() {
   const pendingMemories = (runtime.activeConversation?.memories ?? []).filter((memory) => memory.status === "candidate");
   const approvedMemories = (runtime.activeConversation?.memories ?? []).filter((memory) => memory.status === "approved");
   const lastMessageContent = runtime.messages.at(-1)?.content ?? "";
+  const editorCharacter = characterEditor?.mode === "edit"
+    ? runtime.characters.find((character) => character.id === characterEditor.id)
+    : undefined;
 
   useEffect(() => {
     if (section !== "chat" || !followOutputRef.current) return;
@@ -334,14 +340,18 @@ export function LunemirPrototype() {
           <div className="content-view">
             <div className="view-heading">
               <div><span className="eyebrow">CHARACTER LIBRARY</span><h2>与你产生联系的人</h2></div>
+              <button className="primary-button" onClick={() => setCharacterEditor({ mode: "create" })}>新建角色</button>
             </div>
             <div className="character-grid">
               {runtime.characters.map((character, index) => (
-                <button key={character.id} className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
-                  <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
-                  <span className="character-card-copy"><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small><p>{character.scenario || character.description || "暂未填写角色设定"}</p></span>
-                  <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地`}</em>
-                </button>
+                <article className="character-card-shell" key={character.id}>
+                  <button className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
+                    <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
+                    <span className="character-card-copy"><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small><p>{character.scenario || character.description || "暂未填写角色设定"}</p></span>
+                    <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地`}</em>
+                  </button>
+                  <button className="character-manage" onClick={() => setCharacterEditor({ mode: "edit", id: character.id })}>管理</button>
+                </article>
               ))}
               <button className="character-card empty" onClick={() => setImportOpen(true)}>
                 <span className="card-orb">＋</span><span><strong>导入新角色</strong><small>PNG / JSON</small></span><em>不会覆盖已有角色</em>
@@ -573,6 +583,27 @@ export function LunemirPrototype() {
             </div>
           </section>
         </div>
+      )}
+
+      {characterEditor && (
+        <CharacterEditorModal
+          key={characterEditor.mode === "edit" ? characterEditor.id : "new-character"}
+          character={editorCharacter}
+          onClose={() => setCharacterEditor(null)}
+          onSave={async (values) => {
+            const saved = await runtime.saveCharacterProfile(characterEditor.mode === "edit" ? characterEditor.id : undefined, values);
+            if (saved) setCharacterEditor(null);
+          }}
+          onDuplicate={editorCharacter ? async () => {
+            const duplicate = await runtime.duplicateCharacter(editorCharacter.id);
+            if (duplicate) setCharacterEditor({ mode: "edit", id: duplicate.id });
+          } : undefined}
+          onExport={editorCharacter ? () => runtime.downloadCharacter(editorCharacter.id) : undefined}
+          onDelete={editorCharacter ? async () => {
+            if (!window.confirm(`删除角色“${editorCharacter.name}”及其全部会话、手机事件和记忆？此操作无法撤销。`)) return;
+            if (await runtime.deleteCharacterProfile(editorCharacter.id)) setCharacterEditor(null);
+          } : undefined}
+        />
       )}
 
       {importOpen && (

@@ -10,9 +10,10 @@
 
 ## Phase 1 · 本地内容基础
 
-- [x] IndexedDB 数据库与 v3 增量迁移
+- [x] IndexedDB 数据库与 v4 增量迁移
 - [x] Character / Conversation / Persona / Lorebook / Preset 领域模型
 - [x] 角色卡 V1 / V2 / V3 PNG / JSON 解析器
+- [x] 角色卡新建、编辑、复制、删除与 V2 JSON 导出
 - [x] 独立世界书与聊天预设导入预览
 - [x] JSON 本地备份和恢复
 - [x] 主题变量持久化
@@ -44,7 +45,7 @@
 ## Phase 4 · 创作与扩展
 
 - [ ] 多角色群聊
-- [ ] 角色卡与世界书编辑器
+- [ ] 世界书可视化编辑器
 - [ ] 安全的高级主题系统
 - [ ] 图片和语音能力
 - [ ] 可选桌面包装

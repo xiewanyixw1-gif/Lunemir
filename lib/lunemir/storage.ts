@@ -115,6 +115,10 @@ export function saveCharacter(character: CharacterRecord) {
   return put(CHARACTER_STORE, character);
 }
 
+export function deleteCharacter(characterId: string) {
+  return remove(CHARACTER_STORE, characterId);
+}
+
 export function listLorebooks() {
   return getAll<LorebookRecord>(LOREBOOK_STORE);
 }
