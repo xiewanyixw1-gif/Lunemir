@@ -1,16 +1,10 @@
 "use client";
 
-import { FormEvent, useMemo, useRef, useState } from "react";
+import { FormEvent, useMemo, useState } from "react";
+import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
 type PhoneApp = "messages" | "album" | "notes" | "settings";
-
-type ChatMessage = {
-  id: number;
-  author: "Seren" | "You";
-  body: string;
-  time: string;
-};
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
@@ -20,56 +14,26 @@ const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "settings", icon: "⚙", label: "设置" },
 ];
 
-const starterMessages: ChatMessage[] = [
-  {
-    id: 1,
-    author: "Seren",
-    body: "你终于来了。雨刚停，整座城都像被月光重新擦拭过一遍。",
-    time: "22:41",
-  },
-  {
-    id: 2,
-    author: "You",
-    body: "我在旧钟塔下面。你说要给我看的东西呢？",
-    time: "22:42",
-  },
-  {
-    id: 3,
-    author: "Seren",
-    body: "先别抬头。打开我留在你手机里的那张照片——门只会为知道它名字的人出现。",
-    time: "22:42",
-  },
-];
-
-const characters = [
-  { name: "Seren Vale", note: "月港档案员", status: "正在对话", tone: "violet" },
-  { name: "Iris Noct", note: "梦境观测者", status: "12 分钟前", tone: "cyan" },
-  { name: "Rowan", note: "边境信使", status: "昨天", tone: "rose" },
-  { name: "新角色", note: "导入或从空白创建", status: "", tone: "empty" },
-];
-
-const loreEntries = [
-  { title: "月港 · 城市设定", entries: 28, active: 5, color: "#a990ff" },
-  { title: "旧钟塔与无名门", entries: 12, active: 3, color: "#69dcff" },
-  { title: "角色关系与称呼", entries: 16, active: 4, color: "#ff90c7" },
-];
-
 const themeOptions = [
   { id: "moon", name: "Moon Glass", colors: ["#171336", "#9a7cff", "#6edcff"] },
   { id: "aurora", name: "Aurora Mist", colors: ["#071f26", "#54e0bd", "#7ca8ff"] },
   { id: "rose", name: "Rose Nocturne", colors: ["#2a1024", "#ff82be", "#9d86ff"] },
 ];
 
-function CharacterOrb({ small = false }: { small?: boolean }) {
+function CharacterOrb({ small = false, avatarDataUrl, name }: { small?: boolean; avatarDataUrl?: string; name?: string }) {
   return (
-    <span className={small ? "character-orb character-orb--small" : "character-orb"}>
-      <span className="orb-moon" />
-      <span className="orb-glow" />
+    <span
+      className={small ? "character-orb character-orb--small" : "character-orb"}
+      style={avatarDataUrl ? { backgroundImage: `url(${avatarDataUrl})` } : undefined}
+      aria-label={name}
+    >
+      {!avatarDataUrl && <><span className="orb-moon" /><span className="orb-glow" /></>}
     </span>
   );
 }
 
 export function LunemirPrototype() {
+  const runtime = useLunemirRuntime();
   const [section, setSection] = useState<Section>("chat");
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
@@ -77,10 +41,6 @@ export function LunemirPrototype() {
   const [contextOpen, setContextOpen] = useState(false);
   const [theme, setTheme] = useState("moon");
   const [draft, setDraft] = useState("");
-  const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
-  const [typing, setTyping] = useState(false);
-  const [selectedFile, setSelectedFile] = useState("");
-  const nextId = useRef(10);
 
   const pageTitle = useMemo(
     () => navItems.find((item) => item.id === section)?.label ?? "对话",
@@ -90,27 +50,23 @@ export function LunemirPrototype() {
   function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const content = draft.trim();
-    if (!content || typing) return;
-
-    setMessages((current) => [
-      ...current,
-      { id: nextId.current++, author: "You", body: content, time: "现在" },
-    ]);
+    if (!content || runtime.streaming) return;
     setDraft("");
-    setTyping(true);
+    void runtime.sendMessage(content);
+  }
 
-    window.setTimeout(() => {
-      setMessages((current) => [
-        ...current,
-        {
-          id: nextId.current++,
-          author: "Seren",
-          body: "我听见了。把这句话留在这里吧——月港会记得我们今晚说过的每一件事。",
-          time: "现在",
-        },
-      ]);
-      setTyping(false);
-    }, 720);
+  const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
+  const tokenUsage = runtime.contextReport
+    ? Math.min(100, Math.round(runtime.contextReport.estimatedTokens / runtime.contextReport.limit * 100))
+    : 0;
+
+  function closeImport() {
+    setImportOpen(false);
+    runtime.clearImport();
+  }
+
+  if (!runtime.ready) {
+    return <main className="lunemir-loading"><span className="brand-crescent" /><p>正在打开你的世界…</p></main>;
   }
 
   return (
@@ -144,14 +100,14 @@ export function LunemirPrototype() {
       <section className="workspace glass-panel">
         <header className="top-bar">
           <div className="top-title">
-            {section === "chat" ? <CharacterOrb small /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
+            {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
             <div>
-              <p>{section === "chat" ? "SEREN VALE" : "LUNEMIR"}</p>
-              <h1>{section === "chat" ? "旧钟塔下的约定" : pageTitle}</h1>
+              <p>{section === "chat" ? `${runtime.activeCharacter?.spec.toUpperCase() ?? "CARD"} · ${runtime.activeCharacter?.sourceFormat.toUpperCase() ?? "LOCAL"}` : "LUNEMIR"}</p>
+              <h1>{section === "chat" ? `与 ${activeName} 的对话` : pageTitle}</h1>
             </div>
           </div>
           <div className="top-actions">
-            <span className="secure-state"><i /> 本地存储</span>
+            <span className="secure-state"><i /> IndexedDB 已就绪</span>
             <button className="icon-button" onClick={() => setImportOpen(true)} aria-label="导入内容">＋</button>
             <button className="icon-button context-toggle" onClick={() => setContextOpen(!contextOpen)} aria-label="切换上下文面板">⌘</button>
           </div>
@@ -160,32 +116,31 @@ export function LunemirPrototype() {
         {section === "chat" && (
           <div className="chat-stage">
             <div className="scene-header">
-              <div className="scene-art"><CharacterOrb /></div>
+              <div className="scene-art"><CharacterOrb avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /></div>
               <div className="scene-copy">
-                <span className="eyebrow">CHAPTER 04 · MOONHARBOR</span>
-                <h2>雨后的门</h2>
-                <p>深夜 22:42 · 旧城区 · 微冷</p>
+                <span className="eyebrow">ACTIVE CHARACTER · {runtime.activeCharacter?.specVersion ?? "LOCAL"}</span>
+                <h2>{activeName}</h2>
+                <p>{runtime.activeCharacter?.scenario || runtime.activeCharacter?.description || "等待故事开始"}</p>
               </div>
-              <button className="chapter-button">章节记录 <span>08</span></button>
+              <button className="chapter-button">消息记录 <span>{runtime.messages.length}</span></button>
             </div>
 
             <div className="message-list" aria-live="polite">
               <div className="date-divider"><span>今天</span></div>
-              {messages.map((message) => (
-                <article key={message.id} className={message.author === "You" ? "message user-message" : "message character-message"}>
+              {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
+              {runtime.messages.map((message) => message.status === "streaming" && !message.content ? (
+                <div key={message.id} className="typing-bubble" aria-label={`${activeName} 正在输入`}><i /><i /><i /></div>
+              ) : (
+                <article key={message.id} className={message.role === "user" ? "message user-message" : "message character-message"}>
                   <div className="message-meta">
-                    <strong>{message.author}</strong>
-                    <time>{message.time}</time>
+                    <strong>{message.role === "user" ? "You" : activeName}</strong>
+                    <time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>
+                    {message.status === "stopped" && <em>已停止</em>}
+                    {message.status === "error" && <em>失败</em>}
                   </div>
-                  <p>{message.body}</p>
-                  {message.id === 3 && (
-                    <button className="memory-chip" onClick={() => setPhoneOpen(true)}>
-                      <span>◫</span> 已发送到 Lunemir Phone · 查看照片
-                    </button>
-                  )}
+                  <p>{message.content}</p>
                 </article>
               ))}
-              {typing && <div className="typing-bubble" aria-label="Seren 正在输入"><i /><i /><i /></div>}
             </div>
 
             <form className="composer" onSubmit={sendMessage}>
@@ -206,7 +161,13 @@ export function LunemirPrototype() {
                 />
                 <span>Enter 发送 · Shift + Enter 换行</span>
               </label>
-              <button className="send-button" type="submit" disabled={!draft.trim() || typing} aria-label="发送消息">↗</button>
+              <button
+                className={runtime.streaming ? "send-button is-stopping" : "send-button"}
+                type={runtime.streaming ? "button" : "submit"}
+                onClick={runtime.streaming ? runtime.stopGeneration : undefined}
+                disabled={!runtime.streaming && !draft.trim()}
+                aria-label={runtime.streaming ? "停止生成" : "发送消息"}
+              >{runtime.streaming ? "■" : "↗"}</button>
             </form>
           </div>
         )}
@@ -218,13 +179,16 @@ export function LunemirPrototype() {
               <button className="primary-button" onClick={() => setImportOpen(true)}>导入角色卡</button>
             </div>
             <div className="character-grid">
-              {characters.map((character, index) => (
-                <button key={character.name} className={`character-card ${character.tone}`} onClick={() => index === 0 ? setSection("chat") : setImportOpen(index === 3)}>
-                  <span className="card-orb">{index === 3 ? "+" : character.name.charAt(0)}</span>
-                  <span><strong>{character.name}</strong><small>{character.note}</small></span>
-                  <em>{character.status}</em>
+              {runtime.characters.map((character, index) => (
+                <button key={character.id} className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
+                  <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
+                  <span><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small></span>
+                  <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地`}</em>
                 </button>
               ))}
+              <button className="character-card empty" onClick={() => setImportOpen(true)}>
+                <span className="card-orb">＋</span><span><strong>导入新角色</strong><small>PNG / JSON</small></span><em>不会覆盖已有角色</em>
+              </button>
             </div>
           </div>
         )}
@@ -233,17 +197,18 @@ export function LunemirPrototype() {
           <div className="content-view">
             <div className="view-heading">
               <div><span className="eyebrow">LOREBOOKS</span><h2>让世界拥有连续的记忆</h2></div>
-              <button className="primary-button" onClick={() => setImportOpen(true)}>导入世界书</button>
+              <button className="primary-button" disabled>独立导入 · 即将支持</button>
             </div>
             <div className="lore-list">
-              {loreEntries.map((book) => (
-                <article className="lore-row" key={book.title}>
-                  <span className="lore-color" style={{ background: book.color }} />
-                  <div><strong>{book.title}</strong><small>{book.entries} 个条目 · 当前命中 {book.active} 个</small></div>
-                  <div className="lore-meter"><i style={{ width: `${32 + book.active * 9}%` }} /></div>
-                  <button aria-label={`打开${book.title}`}>→</button>
+              {(runtime.activeCharacter?.lorebookEntries ?? []).map((entry, index) => (
+                <article className="lore-row" key={entry.id}>
+                  <span className="lore-color" style={{ background: ["#a990ff", "#69dcff", "#ff90c7"][index % 3] }} />
+                  <div><strong>{entry.name}</strong><small>{entry.constant ? "常驻条目" : `${entry.keys.length} 个关键词`} · 优先级 {entry.priority}</small></div>
+                  <div className="lore-meter"><i style={{ width: `${Math.min(100, 25 + entry.priority * .7)}%` }} /></div>
+                  <button aria-label={`查看${entry.name}`}>→</button>
                 </article>
               ))}
+              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) === 0 && <div className="empty-state"><span>⌑</span><strong>当前角色没有内置世界书</strong><p>世界书独立导入将在下一阶段加入。</p></div>}
             </div>
           </div>
         )}
@@ -272,38 +237,46 @@ export function LunemirPrototype() {
 
         {section === "settings" && (
           <div className="content-view settings-view">
-            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的语言模型</h2></div><span className="status-pill">未连接</span></div>
+            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的语言模型</h2></div><span className={`status-pill ${runtime.connectionStatus}`}>{({ idle: "未测试", testing: "测试中", connected: "已连接", error: "连接失败" })[runtime.connectionStatus]}</span></div>
             <div className="settings-card">
-              <label>接口类型<select defaultValue="compatible"><option value="compatible">OpenAI-compatible</option><option value="local">Local endpoint</option></select></label>
-              <label>API 地址<input defaultValue="https://api.example.com/v1" /></label>
-              <label>API Key<input type="password" placeholder="仅保存在当前设备" /></label>
-              <label>模型 ID<input placeholder="model-name" /></label>
-              <div className="settings-actions"><p>密钥不会写入 GitHub 仓库。</p><button className="primary-button">测试连接</button></div>
+              <label>接口类型<select value="compatible" disabled><option value="compatible">OpenAI-compatible</option></select></label>
+              <label>API 地址<input value={runtime.modelConfig.baseUrl} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
+              <label>API Key<input type="password" value={runtime.apiKey} onChange={(event) => runtime.setApiKey(event.target.value)} placeholder="仅保留到本页面关闭" autoComplete="off" /></label>
+              <label>模型 ID<input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
+              <label>温度<input type="number" min="0" max="2" step="0.1" value={runtime.modelConfig.temperature} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, temperature: Number(event.target.value) })} /></label>
+              <label>最大输出 Tokens<input type="number" min="64" max="32000" step="64" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /></label>
+              <label>上下文窗口<input type="number" min="1024" max="2000000" step="1024" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /></label>
+              <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
+            </div>
+            <div className="data-card">
+              <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天和设置保存在当前浏览器。导出备份后可以迁移到其他设备。</p></div>
+              <div><button onClick={() => void runtime.downloadBackup()}>导出备份</button><label className="restore-button">恢复备份<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm("恢复备份会替换当前浏览器中的 Lunemir 数据，是否继续？")) void runtime.restoreFromBackup(file); event.currentTarget.value = ""; }} /></label></div>
             </div>
           </div>
         )}
       </section>
 
       <aside className={contextOpen ? "context-panel glass-panel is-open" : "context-panel glass-panel"}>
-        <div className="context-heading"><div><span className="eyebrow">CONTEXT</span><h2>本轮上下文</h2></div><button onClick={() => setContextOpen(false)} aria-label="关闭上下文">×</button></div>
-        <div className="token-ring"><span><strong>8.4k</strong><small>/ 32k tokens</small></span></div>
+        <div className="context-heading"><div><span className="eyebrow">CONTEXT</span><h2>真实上下文预估</h2></div><button onClick={() => setContextOpen(false)} aria-label="关闭上下文">×</button></div>
+        <div className="token-ring" style={{ background: `conic-gradient(var(--accent) 0 ${tokenUsage}%, rgba(255,255,255,.06) ${tokenUsage}% 100%)` }}><span><strong>{runtime.contextReport?.estimatedTokens.toLocaleString() ?? 0}</strong><small>/ {runtime.contextReport?.limit.toLocaleString() ?? 0} tokens</small></span></div>
         <div className="context-block">
           <div className="block-title"><span>当前人设</span><button>编辑</button></div>
-          <article className="persona-card"><span>Y</span><div><strong>旅行者</strong><small>与 Seren 相识 17 天</small></div></article>
+          <article className="persona-card"><span>Y</span><div><strong>旅行者</strong><small>正在与 {activeName} 对话</small></div></article>
         </div>
         <div className="context-block">
-          <div className="block-title"><span>世界书命中</span><em>5</em></div>
-          <button className="context-item"><i className="cyan" /><span><strong>旧钟塔</strong><small>关键词：钟塔、门</small></span><b>96%</b></button>
-          <button className="context-item"><i className="violet" /><span><strong>月港宵禁</strong><small>常驻 · 优先级 80</small></span><b>100%</b></button>
-          <button className="context-item"><i className="rose" /><span><strong>无名门</strong><small>递归命中</small></span><b>74%</b></button>
+          <div className="block-title"><span>世界书命中</span><em>{runtime.contextReport?.matchedLore.length ?? 0}</em></div>
+          {(runtime.contextReport?.matchedLore ?? []).map((match, index) => <button className="context-item" key={match.entry.id}><i className={["cyan", "violet", "rose"][index % 3]} /><span><strong>{match.entry.name}</strong><small>{match.reason}</small></span><b>P{match.entry.priority}</b></button>)}
+          {(runtime.contextReport?.matchedLore.length ?? 0) === 0 && <p className="context-empty">当前消息没有触发世界书条目。</p>}
         </div>
         <div className="context-block memory-block">
-          <div className="block-title"><span>长期记忆</span><button>查看全部</button></div>
-          <p>Seren 曾答应在满月时带你进入旧档案馆。</p>
-          <small>2 个相关记忆已加入</small>
+          <div className="block-title"><span>上下文组成</span><button>实时计算</button></div>
+          {(runtime.contextReport?.segments ?? []).map((segment) => <div className="context-segment" key={segment.id}><span><strong>{segment.label}</strong><small>{segment.detail}</small></span><b>{segment.estimatedTokens} t</b></div>)}
+          {(runtime.contextReport?.warnings ?? []).map((warning) => <p className="context-warning" key={warning}>{warning}</p>)}
         </div>
-        <div className="context-footer"><span>上下文健康度</span><strong>良好 · 82%</strong><div><i /></div></div>
+        <div className="context-footer"><span>上下文余量</span><strong>{(runtime.contextReport?.health ?? 100) > 25 ? "良好" : "注意"} · {runtime.contextReport?.health ?? 100}%</strong><div><i style={{ width: `${runtime.contextReport?.health ?? 100}%` }} /></div></div>
       </aside>
+
+      {runtime.runtimeError && <div className="runtime-toast" role="alert"><span>!</span><p>{runtime.runtimeError}</p><button onClick={runtime.clearRuntimeError} aria-label="关闭错误提示">×</button></div>}
 
       <button className={phoneOpen ? "phone-fab is-active" : "phone-fab"} onClick={() => setPhoneOpen(!phoneOpen)} aria-label="打开悬浮小手机">
         <span className="phone-outline"><i /></span><b>2</b>
@@ -312,7 +285,7 @@ export function LunemirPrototype() {
       <section className={phoneOpen ? "phone-shell is-open" : "phone-shell"} aria-label="Lunemir 悬浮小手机" aria-hidden={!phoneOpen}>
         <div className="phone-frame">
           <div className="phone-status"><span>22:43</span><i /><span>◒</span></div>
-          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，旅行者</strong><span>月港 · 11°C</span></div>
+          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，旅行者</strong><span>{activeName} · 本地会话</span></div>
           <div className="phone-apps">
             {(["messages", "album", "notes", "settings"] as PhoneApp[]).map((app) => {
               const data = { messages: ["✦", "消息"], album: ["◫", "相册"], notes: ["⌑", "备忘"], settings: ["⚙", "设置"] }[app];
@@ -320,9 +293,9 @@ export function LunemirPrototype() {
             })}
           </div>
           <div className="phone-content">
-            {phoneApp === "messages" && <><h3>最近消息</h3><article><span className="mini-avatar">S</span><div><strong>Seren</strong><p>照片已经发给你了。</p></div><time>刚刚</time></article><article><span className="mini-avatar iris">I</span><div><strong>Iris</strong><p>今晚的梦有一点不同。</p></div><time>12m</time></article></>}
-            {phoneApp === "album" && <><h3>剧情相册</h3><div className="album-grid"><span className="moon-photo" /><span className="tower-photo" /><span className="mist-photo" /></div><p className="phone-caption">Seren 刚刚分享了 1 张照片</p></>}
-            {phoneApp === "notes" && <><h3>备忘录</h3><div className="note-card"><strong>进入无名门之前</strong><p>找到门的真名 · 不要抬头 · 带上银色钥匙</p></div><div className="note-card"><strong>下次满月</strong><p>与 Seren 在旧档案馆见面</p></div></>}
+            {phoneApp === "messages" && <><h3>最近消息</h3><article><span className="mini-avatar">{activeName.charAt(0)}</span><div><strong>{activeName}</strong><p>{runtime.messages.at(-1)?.content.slice(0, 28) || "等待第一条消息"}</p></div><time>本地</time></article></>}
+            {phoneApp === "album" && <><h3>剧情相册</h3><div className="album-grid"><span className="moon-photo" /><span className="tower-photo" /><span className="mist-photo" /></div><p className="phone-caption">手机事件引擎将在下一阶段接入</p></>}
+            {phoneApp === "notes" && <><h3>备忘录</h3><div className="note-card"><strong>当前角色</strong><p>{activeName} · {runtime.activeCharacter?.sourceFormat}</p></div><div className="note-card"><strong>本地保存</strong><p>聊天记录已经写入 IndexedDB</p></div></>}
             {phoneApp === "settings" && <><h3>手机设置</h3><label className="phone-switch">允许剧情通知 <input type="checkbox" defaultChecked /><i /></label><label className="phone-switch">角色主动消息 <input type="checkbox" defaultChecked /><i /></label><label className="phone-switch">安静时段 <input type="checkbox" /><i /></label></>}
           </div>
           <button className="phone-home" onClick={() => setPhoneOpen(false)} aria-label="关闭手机" />
@@ -330,20 +303,22 @@ export function LunemirPrototype() {
       </section>
 
       {importOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setImportOpen(false)}>
+        <div className="modal-backdrop" role="presentation" onMouseDown={closeImport}>
           <section className="import-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setImportOpen(false)} aria-label="关闭">×</button>
+            <button className="modal-close" onClick={closeImport} aria-label="关闭">×</button>
             <span className="modal-icon">⇧</span>
             <span className="eyebrow">IMPORT CENTER</span>
             <h2 id="import-title">把熟悉的世界带进来</h2>
-            <p>支持角色卡 PNG / JSON、世界书和预设。导入前会显示字段预览，不会直接覆盖已有内容。</p>
+            <p>支持 V1/V2/V3 角色卡 JSON，以及带有 chara 或 ccv3 数据块的 PNG。导入会创建新角色，不覆盖已有内容。</p>
             <label className="drop-zone">
-              <input type="file" accept=".png,.json" onChange={(event) => setSelectedFile(event.target.files?.[0]?.name ?? "")} />
-              <strong>{selectedFile || "拖放文件，或点击选择"}</strong>
+              <input type="file" accept=".png,.json,application/json,image/png" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runtime.parseImport(file); }} />
+              <strong>{runtime.importPreview?.character.sourceName || "拖放文件，或点击选择"}</strong>
               <small>PNG、JSON · 单个文件最大 20 MB</small>
             </label>
-            {selectedFile && <div className="import-result"><i>✓</i><span><strong>文件已识别</strong><small>下一步将进入字段预览与冲突检查</small></span></div>}
-            <div className="modal-actions"><button onClick={() => setImportOpen(false)}>取消</button><button className="primary-button" disabled={!selectedFile}>继续预览</button></div>
+            {runtime.importError && <div className="import-result is-error"><i>!</i><span><strong>无法导入</strong><small>{runtime.importError}</small></span></div>}
+            {runtime.importPreview && <div className="import-preview"><div className="preview-avatar" style={runtime.importPreview.character.avatarDataUrl ? { backgroundImage: `url(${runtime.importPreview.character.avatarDataUrl})` } : undefined}>{runtime.importPreview.character.avatarDataUrl ? "" : runtime.importPreview.character.name.charAt(0)}</div><div><span>{runtime.importPreview.detectedSpec}</span><strong>{runtime.importPreview.character.name}</strong><small>{runtime.importPreview.character.description.slice(0, 90) || "没有角色描述"}</small></div></div>}
+            {runtime.importPreview?.warnings.map((warning) => <p className="import-warning" key={warning}>{warning}</p>)}
+            <div className="modal-actions"><button onClick={closeImport}>取消</button><button className="primary-button" disabled={!runtime.importPreview} onClick={() => { void runtime.confirmImport(); setImportOpen(false); }}>导入角色</button></div>
           </section>
         </div>
       )}

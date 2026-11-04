@@ -12,7 +12,7 @@ test("ships the Lunemir product surface", async () => {
   ]);
 
   assert.match(layout, /Lunemir/);
-  assert.match(prototype, /Lunemir Phone/);
+  assert.match(prototype, /Lunemir Phone/i);
   assert.match(prototype, /世界书/);
   assert.match(netlify, /publish = "out"/);
 });
@@ -21,6 +21,31 @@ test("includes product and architecture documentation", async () => {
   await Promise.all([
     access(new URL("docs/PRODUCT_REQUIREMENTS.md", root)),
     access(new URL("docs/ARCHITECTURE.md", root)),
+    access(new URL("docs/COMPATIBILITY.md", root)),
     access(new URL("README.md", root)),
   ]);
+});
+
+test("ships a local-first persistence and backup layer", async () => {
+  const storage = await readFile(new URL("lib/lunemir/storage.ts", root), "utf8");
+  assert.match(storage, /indexedDB\.open/);
+  assert.match(storage, /lunemir-backup/);
+  assert.match(storage, /CHARACTER_STORE/);
+  assert.match(storage, /CONVERSATION_STORE/);
+});
+
+test("supports real character cards and compatible streaming", async () => {
+  const [importer, client, context] = await Promise.all([
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/model-client.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+  ]);
+
+  assert.match(importer, /chunks\.get\("ccv3"\) \?\? chunks\.get\("chara"\)/);
+  assert.match(importer, /chara_card_v3/);
+  assert.match(importer, /chara_card_v2/);
+  assert.match(client, /\/chat\/completions/);
+  assert.match(client, /text\/event-stream/);
+  assert.match(context, /matchedLore/);
+  assert.match(context, /estimatedTokens/);
 });

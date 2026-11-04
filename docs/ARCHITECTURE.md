@@ -1,8 +1,10 @@
 # Lunemir 技术架构
 
-## 1. 当前原型
+## 1. 当前实现
 
-当前版本使用 Next.js、React 和 TypeScript，并通过静态导出部署到 Netlify。页面原型不依赖服务器，可在浏览器中演示主要信息架构与交互。
+当前版本使用 Next.js、React 和 TypeScript，并通过静态导出部署到 Netlify。应用不依赖 Lunemir 自有服务器：结构化数据保存在 IndexedDB，模型请求从浏览器直接发送至用户配置的 OpenAI-compatible 接口。
+
+`app/hooks/useLunemirRuntime.ts` 是当前应用服务边界，负责协调 UI、存储、导入、上下文编译与模型客户端；`lib/lunemir/` 中的模块保持独立，方便后续拆分 Provider 与 Repository 接口。
 
 ## 2. 建议分层
 
@@ -103,7 +105,7 @@ domain repositories
 
 ## 7. 本地存储
 
-推荐 IndexedDB 保存结构化数据，Blob 保存头像和附件。设置与低风险偏好可以使用 localStorage。
+当前使用 IndexedDB 保存角色、对话和低风险设置。角色卡 PNG 暂以 Data URL 随角色记录保存，后续素材层会迁移为独立 Blob 记录，避免大头像重复占用结构化存储。
 
 API 密钥默认仅存在于会话内存。用户选择持久保存时，使用 Web Crypto 加密；浏览器端加密无法完全抵抗同源脚本攻击，因此仍需严格控制依赖、内容安全策略和 XSS 风险。
 
@@ -138,4 +140,4 @@ type PhoneEvent = {
 
 ## 10. 部署
 
-当前静态原型运行 `pnpm build` 后输出到 `out/`，由 Netlify 托管。未来如果加入平台自有代理、同步或账号系统，应把服务端单独建模，避免在静态前端中隐藏平台密钥。
+当前静态应用运行 `pnpm build` 后输出到 `out/`，由 Netlify 托管。未来如果加入平台自有代理、同步或账号系统，应把服务端单独建模，避免在静态前端中隐藏平台密钥。
