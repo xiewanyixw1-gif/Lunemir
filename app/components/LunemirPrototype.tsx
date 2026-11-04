@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 
@@ -53,6 +53,8 @@ export function LunemirPrototype() {
   const [personaDescription, setPersonaDescription] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
+  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const followOutputRef = useRef(true);
   const phoneDragRef = useRef<{
     target: DragTarget;
     pointerId: number;
@@ -75,6 +77,7 @@ export function LunemirPrototype() {
     event.preventDefault();
     const content = draft.trim();
     if (!content || runtime.streaming) return;
+    followOutputRef.current = true;
     setDraft("");
     void runtime.sendMessage(content);
   }
@@ -95,6 +98,14 @@ export function LunemirPrototype() {
       : undefined;
   const pendingMemories = (runtime.activeConversation?.memories ?? []).filter((memory) => memory.status === "candidate");
   const approvedMemories = (runtime.activeConversation?.memories ?? []).filter((memory) => memory.status === "approved");
+  const lastMessageContent = runtime.messages.at(-1)?.content ?? "";
+
+  useEffect(() => {
+    if (section !== "chat" || !followOutputRef.current) return;
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+    messageList.scrollTo({ top: messageList.scrollHeight, behavior: runtime.streaming ? "auto" : "smooth" });
+  }, [runtime.messages.length, lastMessageContent, runtime.streaming, section]);
 
   function beginPhoneDrag(event: ReactPointerEvent<HTMLElement>, target: DragTarget) {
     if (event.button !== 0) return;
@@ -227,16 +238,15 @@ export function LunemirPrototype() {
 
         {section === "chat" && (
           <div className="chat-stage">
-            <div className="scene-header">
-              <div className="scene-art"><CharacterOrb avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /></div>
-              <div className="scene-copy">
-                <span className="eyebrow">ACTIVE CHARACTER · {runtime.activeCharacter?.specVersion ?? "LOCAL"}</span>
-                <h2>{activeName}</h2>
-                <p>{runtime.activeCharacter?.scenario || runtime.activeCharacter?.description || "等待故事开始"}</p>
-              </div>
-            </div>
-
-            <div className="message-list" aria-live="polite">
+            <div
+              className="message-list"
+              aria-live="polite"
+              ref={messageListRef}
+              onScroll={(event) => {
+                const target = event.currentTarget;
+                followOutputRef.current = target.scrollHeight - target.scrollTop - target.clientHeight < 140;
+              }}
+            >
               <div className="date-divider"><span>今天</span></div>
               {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
               {runtime.messages.map((message, index) => message.status === "streaming" && !message.content ? (
@@ -261,6 +271,7 @@ export function LunemirPrototype() {
                       <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
                       <button onClick={() => void runtime.branchConversation(message.id)}>从这里分支</button>
                       <button onClick={() => void runtime.addMemoryCandidate(message.id)} disabled={(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id)}>{(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id) ? "已加入记忆" : "记住"}</button>
+                      <button className="danger-action" onClick={() => { if (window.confirm("删除这条消息？相关章节点与待确认记忆也会一并移除。")) void runtime.deleteMessage(message.id); }}>删除</button>
                       {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
                     </div>
                   )}
@@ -320,7 +331,7 @@ export function LunemirPrototype() {
               {runtime.characters.map((character, index) => (
                 <button key={character.id} className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
                   <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
-                  <span><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small></span>
+                  <span className="character-card-copy"><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small><p>{character.scenario || character.description || "暂未填写角色设定"}</p></span>
                   <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地`}</em>
                 </button>
               ))}

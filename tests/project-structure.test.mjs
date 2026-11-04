@@ -75,6 +75,7 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(runtime, /saveCustomBackground/);
   assert.match(runtime, /createNewConversation/);
   assert.match(runtime, /branchConversation/);
+  assert.match(runtime, /deleteMessage/);
   assert.match(runtime, /createCheckpoint/);
   assert.match(runtime, /addMemoryCandidate/);
   assert.match(prototype, /重新生成/);

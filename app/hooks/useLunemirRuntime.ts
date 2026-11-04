@@ -500,6 +500,27 @@ export function useLunemirRuntime() {
     refreshContext(character, nextMessages);
   }
 
+  async function deleteMessage(messageId: string) {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming) return;
+    const nextMessages = messages.filter((message) => message.id !== messageId);
+    const nextConversation: ConversationRecord = {
+      ...conversation,
+      messages: nextMessages,
+      checkpoints: (conversation.checkpoints ?? []).filter((checkpoint) => checkpoint.messageId !== messageId),
+      memories: (conversation.memories ?? []).filter((memory) => memory.sourceMessageId !== messageId),
+      updatedAt: new Date().toISOString(),
+    };
+    setMessages(nextMessages);
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    contextResourcesRef.current.memories = (nextConversation.memories ?? [])
+      .filter((memory) => memory.status === "approved")
+      .map((memory) => memory.content);
+    await saveConversation(nextConversation);
+    refreshContext(character, nextMessages);
+  }
+
   async function regenerateLastReply() {
     if (streaming || !modelIsReady()) return;
     const lastMessage = messages.at(-1);
@@ -789,6 +810,7 @@ export function useLunemirRuntime() {
     activatePreset,
     sendMessage,
     editMessage,
+    deleteMessage,
     regenerateLastReply,
     continueLastReply,
     selectMessageAlternative,
