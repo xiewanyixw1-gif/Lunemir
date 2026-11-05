@@ -25,6 +25,25 @@ function firstText(...values: unknown[]) {
   return values.map(asString).find((value) => value.trim()) ?? "";
 }
 
+export function readCharacterGreetings(rawValue: unknown) {
+  const raw = asRecord(rawValue);
+  const wrappedData = asRecord(raw.data);
+  const data = Object.keys(wrappedData).length ? wrappedData : raw;
+  const greetings = asStringArray(data.greetings);
+  const firstMessage = firstText(
+    data.first_mes,
+    data.first_message,
+    data.firstMessage,
+    data.greeting,
+    greetings[0],
+  );
+  const alternateGreetings = [...new Set([
+    ...asStringArray(data.alternate_greetings ?? data.alternateGreetings),
+    ...greetings.filter((greeting) => greeting !== firstMessage),
+  ].map((greeting) => greeting.trim()).filter(Boolean))];
+  return { firstMessage, alternateGreetings };
+}
+
 export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
   const entries = Array.isArray(rawEntries)
     ? rawEntries
@@ -78,18 +97,7 @@ export function normalizeCharacterCard(
   const embeddedAvatar = asString(lunemirExtensions.avatar_data_url);
   const warnings: string[] = [];
   const name = asString(data.name).trim();
-  const greetings = asStringArray(data.greetings);
-  const firstMessage = firstText(
-    data.first_mes,
-    data.first_message,
-    data.firstMessage,
-    data.greeting,
-    greetings[0],
-  );
-  const alternateGreetings = [...new Set([
-    ...asStringArray(data.alternate_greetings ?? data.alternateGreetings),
-    ...greetings.filter((greeting) => greeting !== firstMessage),
-  ].map((greeting) => greeting.trim()).filter(Boolean))];
+  const { firstMessage, alternateGreetings } = readCharacterGreetings(data);
 
   if (!name) throw new Error("角色卡缺少必需的 name 字段。");
   if (!firstMessage) warnings.push("角色卡没有可识别的开场白，将使用空白开场。");

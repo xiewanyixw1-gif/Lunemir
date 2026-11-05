@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { readCharacterGreetings } from "../../lib/lunemir/character-import";
 import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
@@ -243,7 +244,19 @@ export function useLunemirRuntime() {
       listPresets(),
       getSettings(),
     ]);
-    let storedCharacters = storedCharacterRecords;
+    let storedCharacters = await Promise.all(storedCharacterRecords.map(async (character) => {
+      if (character.firstMessage.trim()) return character;
+      const recovered = readCharacterGreetings(character.raw);
+      if (!recovered.firstMessage) return character;
+      const repaired: CharacterRecord = {
+        ...character,
+        firstMessage: recovered.firstMessage,
+        alternateGreetings: character.alternateGreetings.length > 0 ? character.alternateGreetings : recovered.alternateGreetings,
+        updatedAt: new Date().toISOString(),
+      };
+      await saveCharacter(repaired);
+      return repaired;
+    }));
     if (storedCharacters.length === 0) {
       const sample = createSampleCharacter();
       await saveCharacter(sample);

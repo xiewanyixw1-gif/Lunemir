@@ -202,9 +202,11 @@ test("ships immersive mobile, greeting, worldbook, and preset fixes", async () =
   assert.match(importer, /data\.first_message/);
   assert.match(importer, /data\.firstMessage/);
   assert.match(importer, /data\.greetings/);
+  assert.match(importer, /readCharacterGreetings/);
   assert.match(contentImport, /"first_message"/);
   assert.match(runtime, /saveCharacterLorebook/);
   assert.match(runtime, /nextConversation\.messages\.length === 0/);
+  assert.match(runtime, /recovered\.firstMessage/);
   assert.match(prototype, /WORLD INFO LIBRARY/);
   assert.match(prototype, /PROMPT PRESET LIBRARY/);
   assert.match(prototype, /data-has-background/);
