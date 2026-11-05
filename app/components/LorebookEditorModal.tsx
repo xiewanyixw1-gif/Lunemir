@@ -199,7 +199,7 @@ export function LorebookEditorModal({ lorebook, onClose, onSave, onDuplicate, on
 
           {error && <p className="character-editor-error" role="alert">{error}</p>}
           <div className="character-editor-actions">
-            <div>{lorebook && <><button type="button" onClick={() => void runSecondary(onDuplicate)}>复制世界书</button><button type="button" onClick={onExport}>导出 JSON</button><button className="danger" type="button" onClick={() => void runSecondary(onDelete)}>删除世界书</button></>}</div>
+            <div>{lorebook ? <>{onDuplicate ? <button type="button" onClick={() => void runSecondary(onDuplicate)}>复制世界书</button> : null}{onExport ? <button type="button" onClick={onExport}>导出 JSON</button> : null}{onDelete ? <button className="danger" type="button" onClick={() => void runSecondary(onDelete)}>删除世界书</button> : null}</> : null}</div>
             <span><button type="button" onClick={onClose}>取消</button><button className="primary-button" type="submit" disabled={busy}>{busy ? "保存中…" : "保存世界书"}</button></span>
           </div>
         </form>

@@ -21,6 +21,10 @@ function asNumber(value: unknown, fallback: number) {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
+function firstText(...values: unknown[]) {
+  return values.map(asString).find((value) => value.trim()) ?? "";
+}
+
 export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
   const entries = Array.isArray(rawEntries)
     ? rawEntries
@@ -74,9 +78,21 @@ export function normalizeCharacterCard(
   const embeddedAvatar = asString(lunemirExtensions.avatar_data_url);
   const warnings: string[] = [];
   const name = asString(data.name).trim();
+  const greetings = asStringArray(data.greetings);
+  const firstMessage = firstText(
+    data.first_mes,
+    data.first_message,
+    data.firstMessage,
+    data.greeting,
+    greetings[0],
+  );
+  const alternateGreetings = [...new Set([
+    ...asStringArray(data.alternate_greetings ?? data.alternateGreetings),
+    ...greetings.filter((greeting) => greeting !== firstMessage),
+  ].map((greeting) => greeting.trim()).filter(Boolean))];
 
   if (!name) throw new Error("角色卡缺少必需的 name 字段。");
-  if (!asString(data.first_mes)) warnings.push("角色卡没有首条消息，将使用空白开场。");
+  if (!firstMessage) warnings.push("角色卡没有可识别的开场白，将使用空白开场。");
   if (spec === "v1") warnings.push("检测到旧版 V1 角色卡，已转换为 Lunemir 内部格式。");
   if (spec === "v3" && Number.parseFloat(specVersion) > 3) {
     warnings.push(`角色卡版本 ${specVersion} 高于当前完整验证版本，未知字段会被保留。`);
@@ -95,11 +111,11 @@ export function normalizeCharacterCard(
     description: asString(data.description),
     personality: asString(data.personality),
     scenario: asString(data.scenario),
-    firstMessage: asString(data.first_mes),
+    firstMessage,
     exampleMessages: asString(data.mes_example),
     systemPrompt: asString(data.system_prompt),
     postHistoryInstructions: asString(data.post_history_instructions),
-    alternateGreetings: asStringArray(data.alternate_greetings),
+    alternateGreetings,
     tags: asStringArray(data.tags),
     creator: asString(data.creator),
     characterVersion: asString(data.character_version),

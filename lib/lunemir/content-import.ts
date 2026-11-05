@@ -24,7 +24,7 @@ function looksLikeCharacter(raw: UnknownRecord) {
   const data = Object.keys(asRecord(raw.data)).length ? asRecord(raw.data) : raw;
   return Boolean(
     raw.spec
-    || (asString(data.name) && ["description", "personality", "scenario", "first_mes"].some((key) => key in data)),
+    || (asString(data.name) && ["description", "personality", "scenario", "first_mes", "first_message", "firstMessage", "greeting", "greetings"].some((key) => key in data)),
   );
 }
 

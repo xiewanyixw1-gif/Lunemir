@@ -91,7 +91,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
   return {
     theme,
     blur: Math.min(36, Math.max(4, numberOr(value?.blur, DEFAULT_APPEARANCE.blur))),
-    opacity: Math.min(92, Math.max(25, numberOr(value?.opacity, DEFAULT_APPEARANCE.opacity))),
+    opacity: Math.min(95, Math.max(8, numberOr(value?.opacity, DEFAULT_APPEARANCE.opacity))),
     radius: Math.min(36, Math.max(10, numberOr(value?.radius, DEFAULT_APPEARANCE.radius))),
     glassMode,
     backgroundMode,
@@ -187,8 +187,22 @@ export function useLunemirRuntime() {
     if (characterConversations.length === 0) {
       characterConversations = [await createConversationRecord(character)];
     }
-    const nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
+    let nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
       ?? characterConversations[0];
+    if (
+      nextConversation.messages.length === 0
+      && character.firstMessage.trim()
+      && nextConversation.createdAt === nextConversation.updatedAt
+    ) {
+      nextConversation = {
+        ...nextConversation,
+        title: nextConversation.title === "新的故事" ? character.firstMessage.slice(0, 28) : nextConversation.title,
+        messages: initialMessage(character),
+        updatedAt: new Date().toISOString(),
+      };
+      await saveConversation(nextConversation);
+      characterConversations = characterConversations.map((item) => item.id === nextConversation.id ? nextConversation : item);
+    }
     const nextPersona = personaLibraryRef.current.find((persona) => persona.id === settings.personaAssignments?.[nextConversation.id])
       ?? personaLibraryRef.current.find((persona) => persona.id === settings.activePersonaId)
       ?? personaLibraryRef.current[0]
@@ -1021,6 +1035,39 @@ export function useLunemirRuntime() {
     return lorebook;
   }
 
+  async function saveCharacterLorebook(characterId: string, values: LorebookEditorValues) {
+    const character = characters.find((item) => item.id === characterId);
+    if (!character) return null;
+    if (!values.name.trim()) {
+      setRuntimeError("世界书名称不能为空。");
+      return null;
+    }
+    const entries = values.entries.map((entry, index) => ({
+      ...entry,
+      id: entry.id || createId("lore"),
+      name: entry.name.trim() || `条目 ${index + 1}`,
+      keys: [...entry.keys],
+      secondaryKeys: [...entry.secondaryKeys],
+      content: entry.content.trim(),
+      insertionOrder: index,
+      extensions: { ...entry.extensions },
+    }));
+    if (entries.length === 0) {
+      setRuntimeError("世界书至少需要一个条目。");
+      return null;
+    }
+    const updated: CharacterRecord = {
+      ...character,
+      lorebookName: values.name.trim(),
+      lorebookEntries: entries,
+      updatedAt: new Date().toISOString(),
+    };
+    await saveCharacter(updated);
+    setCharacters((items) => items.map((item) => item.id === characterId ? updated : item));
+    if (activeCharacter?.id === characterId) refreshContext(updated, messages);
+    return updated;
+  }
+
   async function duplicateLorebook(lorebookId: string) {
     const source = lorebooks.find((lorebook) => lorebook.id === lorebookId);
     if (!source) return null;
@@ -1449,6 +1496,7 @@ export function useLunemirRuntime() {
     activeCharacter,
     lorebooks,
     activeLorebooks,
+    lorebookAssignments,
     personas,
     activePersona,
     personaAssignments,
@@ -1495,6 +1543,7 @@ export function useLunemirRuntime() {
     removeMemory: (memoryId: string) => setMemoryStatus(memoryId, "remove"),
     toggleLorebookAssignment,
     saveLorebookProfile,
+    saveCharacterLorebook,
     duplicateLorebook,
     deleteLorebookProfile,
     downloadLorebook,

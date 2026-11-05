@@ -2,25 +2,27 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
+import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
 import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 
-type Section = "chat" | "characters" | "lore" | "themes" | "settings";
+type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
 type DragTarget = "button" | "panel";
 type CharacterEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
-type LorebookEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
+type LorebookEditorTarget = { mode: "create" } | { mode: "edit"; id: string } | { mode: "embedded"; characterId: string };
 type PresetEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 
 const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "chat", icon: "◌", label: "对话" },
   { id: "characters", icon: "◇", label: "角色" },
   { id: "lore", icon: "⌑", label: "世界书" },
+  { id: "presets", icon: "≋", label: "预设" },
   { id: "themes", icon: "✦", label: "主题" },
-  { id: "settings", icon: "⚙", label: "设置" },
+  { id: "settings", icon: "⌬", label: "设置" },
 ];
 
 const themeOptions = [
@@ -112,9 +114,23 @@ export function LunemirPrototype() {
   const editorCharacter = characterEditor?.mode === "edit"
     ? runtime.characters.find((character) => character.id === characterEditor.id)
     : undefined;
+  const embeddedLorebookCharacter = lorebookEditor?.mode === "embedded"
+    ? runtime.characters.find((character) => character.id === lorebookEditor.characterId)
+    : undefined;
   const editorLorebook = lorebookEditor?.mode === "edit"
     ? runtime.lorebooks.find((lorebook) => lorebook.id === lorebookEditor.id)
-    : undefined;
+    : embeddedLorebookCharacter
+      ? {
+          id: `embedded-${embeddedLorebookCharacter.id}`,
+          schemaVersion: 1 as const,
+          name: embeddedLorebookCharacter.lorebookName || `${embeddedLorebookCharacter.name} · 内嵌世界书`,
+          sourceName: `${embeddedLorebookCharacter.name} 角色卡`,
+          entries: embeddedLorebookCharacter.lorebookEntries,
+          raw: {},
+          createdAt: embeddedLorebookCharacter.createdAt,
+          updatedAt: embeddedLorebookCharacter.updatedAt,
+        } satisfies LorebookRecord
+      : undefined;
   const editorPreset = presetEditor?.mode === "edit"
     ? runtime.presets.find((preset) => preset.id === presetEditor.id)
     : undefined;
@@ -209,7 +225,7 @@ export function LunemirPrototype() {
   }
 
   return (
-    <main className="lunemir-app" data-theme={runtime.appearance.theme} data-glass-mode={runtime.appearance.glassMode} data-section={section} style={appearanceStyle}>
+    <main className="lunemir-app" data-theme={runtime.appearance.theme} data-glass-mode={runtime.appearance.glassMode} data-has-background={activeBackground ? "true" : "false"} data-section={section} style={appearanceStyle}>
       <div className={activeBackground ? "scene-background has-image" : "scene-background"} style={activeBackground ? { backgroundImage: `url("${activeBackground}")` } : undefined} />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
@@ -232,7 +248,7 @@ export function LunemirPrototype() {
             </button>
           ))}
         </nav>
-        <button className="profile-button" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined} onClick={() => setPersonaOpen(true)} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`}>
+        <button className="profile-button" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined} onClick={() => setPersonaOpen(true)} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`} title={`当前人设：${runtime.activePersona?.name ?? "旅行者"} · 点击编辑或切换`}>
           {runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
         </button>
       </aside>
@@ -369,31 +385,65 @@ export function LunemirPrototype() {
         {section === "lore" && (
           <div className="content-view">
             <div className="view-heading">
-              <div><span className="eyebrow">LOREBOOKS</span><h2>让世界拥有连续的记忆</h2></div>
+              <div><span className="eyebrow">WORLD INFO LIBRARY</span><h2>世界书库</h2><p className="view-description">所有角色卡内嵌世界书与独立世界书都集中在这里。为当前角色启用的独立世界书才会进入上下文。</p></div>
               <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入 JSON</button><button className="primary-button" onClick={() => setLorebookEditor({ mode: "create" })}>新建世界书</button></div>
             </div>
             <div className="lore-list">
-              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) > 0 && <span className="lore-section-label">角色卡内嵌世界书</span>}
-              {(runtime.activeCharacter?.lorebookEntries ?? []).map((entry, index) => (
-                <article className="lore-row" key={entry.id}>
+              {runtime.characters.some((character) => character.lorebookEntries.length > 0) ? <span className="lore-section-label">角色卡内嵌 · 随对应角色自动使用</span> : null}
+              {runtime.characters.filter((character) => character.lorebookEntries.length > 0).map((character, index) => (
+                <article className={runtime.activeCharacter?.id === character.id ? "lore-row embedded is-enabled" : "lore-row embedded"} key={character.id}>
                   <span className="lore-color" style={{ background: ["#a990ff", "#69dcff", "#ff90c7"][index % 3] }} />
-                  <div><strong>{entry.name}</strong><small>{entry.constant ? "常驻条目" : `${entry.keys.length} 个关键词`} · 优先级 {entry.priority}</small></div>
-                  <div className="lore-meter"><i style={{ width: `${Math.min(100, 25 + entry.priority * .7)}%` }} /></div>
+                  <button className="lore-open" onClick={() => setLorebookEditor({ mode: "embedded", characterId: character.id })}>
+                    <strong>{character.lorebookName || `${character.name} · 内嵌世界书`}</strong>
+                    <small>{character.name} · {character.lorebookEntries.filter((entry) => entry.enabled).length}/{character.lorebookEntries.length} 个条目启用</small>
+                  </button>
+                  <span className="lore-binding-state">{runtime.activeCharacter?.id === character.id ? "当前角色使用中" : "随角色切换"}</span>
+                  <button className="lore-manage" onClick={() => setLorebookEditor({ mode: "embedded", characterId: character.id })}>打开编辑</button>
                 </article>
               ))}
-              {runtime.lorebooks.length > 0 && <span className="lore-section-label">独立世界书 · 点击控制当前角色是否启用</span>}
+              {runtime.lorebooks.length > 0 ? <span className="lore-section-label">独立世界书 · 为当前角色 {activeName} 单独启停</span> : null}
               {runtime.lorebooks.map((book, index) => {
                 const enabled = runtime.activeLorebooks.some((item) => item.id === book.id);
+                const assignedCharacters = runtime.characters.filter((character) => (runtime.lorebookAssignments[character.id] ?? []).includes(book.id));
                 return (
                   <article className={enabled ? "lore-row standalone is-enabled" : "lore-row standalone"} key={book.id}>
                     <span className="lore-color" style={{ background: ["#69dcff", "#a990ff", "#ff90c7"][index % 3] }} />
-                    <div><strong>{book.name}</strong><small>{book.entries.length} 个条目 · {book.sourceName}</small></div>
-                    <div className="lore-meter"><i style={{ width: `${Math.min(100, 18 + book.entries.length * 4)}%` }} /></div>
-                    <div className="lore-actions"><button className="lore-manage" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}>管理</button><button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? "已启用" : "启用"}</button></div>
+                    <button className="lore-open" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}><strong>{book.name}</strong><small>{book.entries.filter((entry) => entry.enabled).length}/{book.entries.length} 个条目启用 · 已绑定 {assignedCharacters.length} 个角色</small></button>
+                    <span className="lore-binding-state">{assignedCharacters.map((character) => character.name).join("、") || "尚未绑定角色"}</span>
+                    <div className="lore-actions"><button className="lore-manage" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}>打开编辑</button><button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? `对 ${activeName} 已启用` : `为 ${activeName} 启用`}</button></div>
                   </article>
                 );
               })}
-              {(runtime.activeCharacter?.lorebookEntries.length ?? 0) === 0 && runtime.lorebooks.length === 0 && <div className="empty-state"><span>⌑</span><strong>还没有世界书</strong><p>导入 World Info JSON 后会自动为当前角色启用。</p></div>}
+              {!runtime.characters.some((character) => character.lorebookEntries.length > 0) && runtime.lorebooks.length === 0 ? <div className="empty-state"><span>⌑</span><strong>还没有世界书</strong><p>导入 World Info JSON 后会进入世界书库，并默认为当前角色启用。</p></div> : null}
+            </div>
+          </div>
+        )}
+
+        {section === "presets" && (
+          <div className="content-view">
+            <div className="view-heading">
+              <div><span className="eyebrow">PROMPT PRESET LIBRARY</span><h2>提示词预设</h2><p className="view-description">预设控制写作方式、角色行为、叙事规则和生成参数。当前只启用一个预设，不会覆盖库中的其他预设。</p></div>
+              <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入 JSON</button><button className="primary-button" onClick={() => setPresetEditor({ mode: "create" })}>新建预设</button></div>
+            </div>
+            <div className="preset-library-grid">
+              <article className={!activePresetId ? "preset-library-card is-active" : "preset-library-card"}>
+                <span className="preset-library-glyph">○</span>
+                <div><strong>不使用预设</strong><p>只使用角色卡、人设、世界书和当前对话。</p><small>{!activePresetId ? "当前正在使用" : "基础上下文"}</small></div>
+                <button onClick={() => void runtime.activatePreset("")} disabled={!activePresetId}>{!activePresetId ? "已启用" : "使用"}</button>
+              </article>
+              {runtime.presets.map((preset) => {
+                const enabledModules = Array.isArray(preset.modules) ? preset.modules.filter((module) => module.enabled).length : [preset.systemPrompt, preset.postHistoryInstructions].filter(Boolean).length;
+                const totalModules = Array.isArray(preset.modules) ? preset.modules.length : enabledModules;
+                const isActive = activePresetId === preset.id;
+                return (
+                  <article className={isActive ? "preset-library-card is-active" : "preset-library-card"} key={preset.id}>
+                    <span className="preset-library-glyph">≋</span>
+                    <button className="preset-library-open" onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}><strong>{preset.name}</strong><p>{enabledModules}/{totalModules} 个模块启用 · {preset.sourceName}</p><small>{isActive ? "当前正在影响生成" : Object.keys(preset.modelPatch).length ? `${Object.keys(preset.modelPatch).length} 个模型参数` : "仅提示词规则"}</small></button>
+                    <div><button onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}>编辑</button><button className={isActive ? "is-applied" : ""} onClick={() => void runtime.activatePreset(preset.id)}>{isActive ? "已启用" : "使用"}</button></div>
+                  </article>
+                );
+              })}
+              {runtime.presets.length === 0 ? <div className="empty-state"><span>≋</span><strong>还没有提示词预设</strong><p>导入常见聊天预设 JSON，或从空白模块开始创建。</p></div> : null}
             </div>
           </div>
         )}
@@ -431,7 +481,7 @@ export function LunemirPrototype() {
             </div>
             <div className="slider-panel">
               <label><span>玻璃模糊度 <b>{runtime.appearance.blur}px</b></span><input type="range" min="4" max="36" value={runtime.appearance.blur} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, blur: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} /></label>
-              <label><span>面板透明度 <b>{runtime.appearance.opacity}%</b></span><input type="range" min="25" max="92" value={runtime.appearance.opacity} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, opacity: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} /></label>
+              <label><span>面板不透明度 <b>{runtime.appearance.opacity}%</b></span><input type="range" min="8" max="95" value={runtime.appearance.opacity} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, opacity: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} /></label>
               <label><span>圆角强度 <b>{runtime.appearance.radius}px</b></span><input type="range" min="10" max="36" value={runtime.appearance.radius} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, radius: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} /></label>
             </div>
           </div>
@@ -449,10 +499,6 @@ export function LunemirPrototype() {
               <label>最大输出 Tokens<input type="number" min="64" max="32000" step="64" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /></label>
               <label>上下文窗口<input type="number" min="1024" max="2000000" step="1024" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /></label>
               <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
-            </div>
-            <div className="data-card preset-card">
-              <div><span className="eyebrow">PROMPT PRESET</span><h3>提示词预设</h3><p>每个模块可以独立启停、排序和设置插入位置；启用预设时会同步应用其中的模型参数。</p></div>
-              <div className="preset-card-actions"><select value={activePresetId} onChange={(event) => void runtime.activatePreset(event.target.value)} aria-label="选择提示词预设"><option value="">不使用预设</option>{runtime.presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.name}</option>)}</select>{activePresetId && <button onClick={() => setPresetEditor({ mode: "edit", id: activePresetId })}>管理</button>}<button onClick={() => setPresetEditor({ mode: "create" })}>新建</button><button onClick={() => setImportOpen(true)}>导入</button></div>
             </div>
             <div className="data-card">
               <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天和设置保存在当前浏览器。导出备份后可以迁移到其他设备。</p></div>
@@ -614,19 +660,21 @@ export function LunemirPrototype() {
 
       {lorebookEditor && (
         <LorebookEditorModal
-          key={lorebookEditor.mode === "edit" ? lorebookEditor.id : "new-lorebook"}
+          key={lorebookEditor.mode === "edit" ? lorebookEditor.id : lorebookEditor.mode === "embedded" ? `embedded-${lorebookEditor.characterId}` : "new-lorebook"}
           lorebook={editorLorebook}
           onClose={() => setLorebookEditor(null)}
           onSave={async (values) => {
-            const saved = await runtime.saveLorebookProfile(lorebookEditor.mode === "edit" ? lorebookEditor.id : undefined, values);
+            const saved = lorebookEditor.mode === "embedded"
+              ? await runtime.saveCharacterLorebook(lorebookEditor.characterId, values)
+              : await runtime.saveLorebookProfile(lorebookEditor.mode === "edit" ? lorebookEditor.id : undefined, values);
             if (saved) setLorebookEditor(null);
           }}
-          onDuplicate={editorLorebook ? async () => {
+          onDuplicate={editorLorebook && lorebookEditor.mode === "edit" ? async () => {
             const duplicate = await runtime.duplicateLorebook(editorLorebook.id);
             if (duplicate) setLorebookEditor({ mode: "edit", id: duplicate.id });
           } : undefined}
-          onExport={editorLorebook ? () => runtime.downloadLorebook(editorLorebook.id) : undefined}
-          onDelete={editorLorebook ? async () => {
+          onExport={editorLorebook && lorebookEditor.mode === "edit" ? () => runtime.downloadLorebook(editorLorebook.id) : undefined}
+          onDelete={editorLorebook && lorebookEditor.mode === "edit" ? async () => {
             if (!window.confirm(`删除世界书“${editorLorebook.name}”？它会同时从所有角色的启用列表中移除。`)) return;
             if (await runtime.deleteLorebookProfile(editorLorebook.id)) setLorebookEditor(null);
           } : undefined}

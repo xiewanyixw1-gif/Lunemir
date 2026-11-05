@@ -190,3 +190,25 @@ test("supports persistent personas bound to individual stories", async () => {
   assert.match(context, /人物关系/);
   assert.match(types, /avatarDataUrl/);
 });
+
+test("ships immersive mobile, greeting, worldbook, and preset fixes", async () => {
+  const [prototype, runtime, importer, contentImport, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(importer, /data\.first_message/);
+  assert.match(importer, /data\.firstMessage/);
+  assert.match(importer, /data\.greetings/);
+  assert.match(contentImport, /"first_message"/);
+  assert.match(runtime, /saveCharacterLorebook/);
+  assert.match(runtime, /nextConversation\.messages\.length === 0/);
+  assert.match(prototype, /WORLD INFO LIBRARY/);
+  assert.match(prototype, /PROMPT PRESET LIBRARY/);
+  assert.match(prototype, /data-has-background/);
+  assert.doesNotMatch(prototype, /data-card preset-card/);
+  assert.match(styles, /overflow-x:hidden/);
+  assert.match(styles, /data-has-background="true"/);
+});

@@ -9,6 +9,7 @@ v0.2 支持：
 - Character Card V3 JSON 与 PNG `ccv3` tEXt 数据块；
 - 同一 PNG 同时包含 `ccv3` 和 `chara` 时优先读取 `ccv3`；
 - 角色卡内嵌 `character_book`、备用开场白、扩展字段和 PNG 头像；
+- 开场白除标准 `first_mes` 外，也兼容常见的 `first_message`、`firstMessage`、`greeting` 与 `greetings` 字段；
 - 导入前预览、格式提示与 20 MB 文件上限。
 - 支持在角色页新建、编辑、复制和删除角色，并导出 Character Card V2 JSON；
 - Lunemir JSON 导出会在扩展字段保存 Data URL 头像，重新导入时可恢复，其他应用可以安全忽略该扩展。
@@ -39,6 +40,7 @@ v0.2 支持：
 - 导入后自动绑定当前角色，之后可以逐本启停；
 - 支持新建、编辑、复制、删除和导出独立世界书；
 - 编辑器可管理主次关键词、内容、常驻、组合触发、启用状态、大小写匹配、优先级和条目顺序；
+- 世界书库同时列出所有角色卡内嵌世界书与独立世界书；内嵌条目可直接编辑，独立世界书按角色分别启停；
 - 新建和复制的世界书默认绑定当前角色，删除时从全部角色绑定中安全移除；
 - 支持包含 `prompts`、`prompt_order` 和 OpenAI 常用采样字段的聊天预设；
 - 应用 `temperature`、`openai_max_tokens`、`openai_max_context`，并保留完整原始 JSON。
