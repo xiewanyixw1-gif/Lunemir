@@ -17,6 +17,20 @@ test("ships the Lunemir product surface", async () => {
   assert.match(netlify, /publish = "out"/);
 });
 
+test("keeps every workspace page behind one immersive navigation drawer", async () => {
+  const [prototype, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+
+  assert.match(prototype, /navigation-trigger/);
+  assert.match(prototype, /navigation-drawer/);
+  assert.match(prototype, /navigateTo\(item\.id\)/);
+  assert.doesNotMatch(prototype, /className="side-rail"/);
+  assert.match(styles, /\.navigation-drawer\.is-open/);
+  assert.match(styles, /\.navigation-backdrop\.is-open/);
+});
+
 test("includes product and architecture documentation", async () => {
   await Promise.all([
     access(new URL("docs/PRODUCT_REQUIREMENTS.md", root)),

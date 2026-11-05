@@ -296,4 +296,38 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 @media (max-width:390px){.message-avatar{width:min(34px,var(--lm-avatar-size));height:min(34px,var(--lm-avatar-size));flex-basis:min(34px,var(--lm-avatar-size))}.message-row{gap:7px}.message{max-width:calc(94% - min(34px,var(--lm-avatar-size)) - 7px)}.top-title p{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
 
+/* Single-surface navigation · all tools live behind one quiet menu trigger. */
+.lunemir-app,.lunemir-app[data-section="chat"]{grid-template-columns:minmax(540px,1fr) 318px}
+.lunemir-app:not([data-section="chat"]){grid-template-columns:minmax(540px,1fr)}
+.navigation-trigger{width:34px;height:34px;display:grid;place-content:center;gap:4px;flex:0 0 auto;border:1px solid rgba(220,205,255,var(--lm-glass-border-opacity));border-radius:11px;background:rgba(255,255,255,.035);color:var(--lm-text-secondary);cursor:pointer;transition:border-color .18s ease,background .18s ease,color .18s ease}
+.navigation-trigger:hover,.navigation-trigger[aria-expanded="true"]{border-color:rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.11);color:var(--lm-text-primary)}
+.navigation-trigger i{width:14px;height:1.5px;display:block;border-radius:2px;background:currentColor}
+.navigation-backdrop{position:fixed;z-index:44;inset:0;border:0;padding:0;background:rgba(3,3,12,.16);opacity:0;pointer-events:none;cursor:default;transition:opacity .24s ease;backdrop-filter:blur(0);-webkit-backdrop-filter:blur(0)}
+.navigation-backdrop.is-open{opacity:1;pointer-events:auto;backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+.navigation-drawer{position:fixed;z-index:45;top:12px;bottom:12px;left:12px;width:min(380px,calc(100vw - 24px));display:flex;flex-direction:column;overflow:hidden;padding:18px;transform:translateX(calc(-100% - 28px));opacity:0;pointer-events:none;transition:transform .28s cubic-bezier(.2,.8,.2,1),opacity .2s ease}
+.navigation-drawer.is-open{transform:translateX(0);opacity:1;pointer-events:auto}
+.navigation-drawer-heading{display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:13px;padding:4px 3px 18px;border-bottom:1px solid var(--line)}
+.navigation-drawer-heading .character-orb{width:54px;height:54px;flex-basis:54px}
+.navigation-drawer-heading>div{min-width:0}.navigation-drawer-heading strong,.navigation-drawer-heading small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.navigation-drawer-heading strong{font:500 19px/1.25 Georgia,"Noto Serif SC",serif}.navigation-drawer-heading small{margin-top:5px;color:var(--lm-text-muted);font-size:9px}.navigation-drawer-heading>button{width:32px;height:32px;border:0;border-radius:10px;background:rgba(255,255,255,.035);color:var(--lm-text-muted);cursor:pointer;font-size:19px}
+.navigation-drawer-list{min-height:0;display:flex;flex:1;flex-direction:column;gap:5px;overflow-y:auto;padding:16px 0}
+.navigation-drawer-list>button{width:100%;display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;border:1px solid transparent;border-radius:14px;padding:10px;background:transparent;color:var(--lm-text-secondary);text-align:left;cursor:pointer;transition:background .17s ease,border-color .17s ease,color .17s ease}
+.navigation-drawer-list>button:hover{background:rgba(255,255,255,.035);color:var(--lm-text-primary)}
+.navigation-drawer-list>button.is-active{border-color:rgba(var(--accent-rgb),.24);background:rgba(var(--accent-rgb),.09);color:var(--lm-text-primary)}
+.navigation-drawer-list>button>span{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:rgba(255,255,255,.04);color:var(--lm-text-muted);font-size:20px}.navigation-drawer-list>button.is-active>span{background:rgba(var(--accent-rgb),.14);color:var(--accent)}
+.navigation-drawer-list>button>div{min-width:0}.navigation-drawer-list strong,.navigation-drawer-list small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.navigation-drawer-list strong{font-size:11px}.navigation-drawer-list small{margin-top:4px;color:var(--lm-text-muted);font-size:8px}.navigation-drawer-list i,.navigation-persona>i{color:#716b82;font-size:17px;font-style:normal}
+.navigation-persona{display:grid;grid-template-columns:42px minmax(0,1fr) auto;align-items:center;gap:11px;width:100%;border:1px solid var(--line);border-radius:15px;padding:10px;background:rgba(255,255,255,.025);color:var(--lm-text-primary);text-align:left;cursor:pointer}
+.navigation-persona>span{width:42px;height:42px;display:grid;place-items:center;border-radius:13px;background:linear-gradient(145deg,#5f5185,#29223f);background-size:cover;background-position:center;color:#eee8ff;font:500 16px Georgia,serif}.navigation-persona>div{min-width:0}.navigation-persona strong,.navigation-persona small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.navigation-persona strong{font-size:10px}.navigation-persona small{margin-top:4px;color:var(--lm-text-muted);font-size:8px}
+
+@media (max-width:700px){
+  .lunemir-app,.lunemir-app[data-section="chat"],.lunemir-app:not([data-section="chat"]){display:block;height:100dvh;min-height:0;padding:0;overflow:clip}
+  .workspace,.lunemir-app[data-section="chat"] .workspace,.lunemir-app:not([data-section="chat"]) .workspace{width:100%;height:100dvh;min-height:0;border:0;border-radius:0}
+  .top-bar,.lunemir-app[data-section="chat"] .top-bar{min-height:58px;padding:8px 11px}
+  .navigation-trigger{width:34px;height:34px;border-radius:10px}
+  .navigation-drawer{top:0;bottom:0;left:0;width:min(360px,88vw);padding:calc(16px + env(safe-area-inset-top)) 15px calc(14px + env(safe-area-inset-bottom));border-width:0 1px 0 0;border-radius:0 24px 24px 0}
+  .navigation-drawer-heading{padding-bottom:15px}.navigation-drawer-heading .character-orb{width:48px;height:48px;flex-basis:48px}
+  .navigation-drawer-list{gap:3px;padding:12px 0}.navigation-drawer-list>button{padding:8px}.navigation-drawer-list>button>span{width:39px;height:39px}
+  .context-panel{top:58px}
+}
+@media (max-width:390px){.top-title{gap:7px}.top-title .character-orb--small,.top-title .section-glyph{display:none}.navigation-drawer{width:90vw}.navigation-drawer-heading strong{font-size:17px}}
+
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important;transition-duration:.01ms!important}}

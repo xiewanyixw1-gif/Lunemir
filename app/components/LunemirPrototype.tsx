@@ -64,6 +64,7 @@ function messageDayLabel(value: string) {
 export function LunemirPrototype() {
   const runtime = useLunemirRuntime();
   const [section, setSection] = useState<Section>("chat");
+  const [navigationOpen, setNavigationOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
   const [phoneDraft, setPhoneDraft] = useState("");
@@ -193,6 +194,21 @@ export function LunemirPrototype() {
   );
 
   useEffect(() => {
+    if (!navigationOpen) return;
+    function closeNavigation(event: KeyboardEvent) {
+      if (event.key === "Escape") setNavigationOpen(false);
+    }
+    window.addEventListener("keydown", closeNavigation);
+    return () => window.removeEventListener("keydown", closeNavigation);
+  }, [navigationOpen]);
+
+  function navigateTo(nextSection: Section) {
+    setSection(nextSection);
+    setNavigationOpen(false);
+    if (nextSection !== "chat") setContextOpen(false);
+  }
+
+  useEffect(() => {
     if (section !== "chat" || !followOutputRef.current) return;
     const messageList = messageListRef.current;
     if (!messageList) return;
@@ -309,32 +325,53 @@ export function LunemirPrototype() {
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
-      <GlassPanel as="aside" className="side-rail" aria-label="主导航">
-        <div className="brand-mark" aria-hidden="true">
-          <span className="brand-crescent" />
+      <button
+        className={navigationOpen ? "navigation-backdrop is-open" : "navigation-backdrop"}
+        type="button"
+        onClick={() => setNavigationOpen(false)}
+        aria-label="关闭主菜单"
+        tabIndex={navigationOpen ? 0 : -1}
+      />
+      <GlassPanel as="aside" className={navigationOpen ? "navigation-drawer is-open" : "navigation-drawer"} aria-label="Lunemir 主菜单" aria-hidden={!navigationOpen}>
+        <div className="navigation-drawer-heading">
+          <CharacterOrb avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} />
+          <div><span className="eyebrow">CURRENT STORY</span><strong>{activeName}</strong><small>{runtime.activeConversation?.title ?? "当前剧情"}</small></div>
+          <button type="button" onClick={() => setNavigationOpen(false)} aria-label="关闭主菜单" tabIndex={navigationOpen ? 0 : -1}>×</button>
         </div>
-        <nav className="rail-nav">
+        <nav className="navigation-drawer-list" aria-label="功能页面">
           {navItems.map((item) => (
             <button
+              type="button"
               key={item.id}
-              className={section === item.id ? "rail-button is-active" : "rail-button"}
-              onClick={() => { setSection(item.id); if (item.id !== "chat") setContextOpen(false); }}
-              aria-label={item.label}
+              className={section === item.id ? "is-active" : ""}
+              onClick={() => navigateTo(item.id)}
               aria-current={section === item.id ? "page" : undefined}
+              tabIndex={navigationOpen ? 0 : -1}
             >
               <span aria-hidden="true">{item.icon}</span>
-              <small>{item.label}</small>
+              <div><strong>{item.label}</strong><small>{{ chat: "继续当前故事与角色互动", characters: "角色卡与开场白", lore: "世界书库与条目", presets: "提示词与输出美化", themes: "聊天背景与毛玻璃", settings: "模型、数据与连接" }[item.id]}</small></div>
+              <i aria-hidden="true">›</i>
             </button>
           ))}
         </nav>
-        <button className="profile-button" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined} onClick={() => setPersonaOpen(true)} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`} title={`当前人设：${runtime.activePersona?.name ?? "旅行者"} · 点击编辑或切换`}>
-          {runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
+        <button
+          className="navigation-persona"
+          type="button"
+          onClick={() => { setNavigationOpen(false); setPersonaOpen(true); }}
+          tabIndex={navigationOpen ? 0 : -1}
+        >
+          <span style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}</span>
+          <div><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>当前用户人设 · 点击编辑或切换</small></div>
+          <i aria-hidden="true">›</i>
         </button>
       </GlassPanel>
 
       <GlassPanel as="section" className="workspace">
         <header className="top-bar">
           <div className="top-title">
+            <button className="navigation-trigger" type="button" onClick={() => setNavigationOpen(true)} aria-label="打开主菜单" aria-expanded={navigationOpen}>
+              <i /><i /><i />
+            </button>
             {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
             <div>
               <p>{section === "chat" ? runtime.activeConversation?.title ?? "当前剧情" : "LUNEMIR"}</p>
