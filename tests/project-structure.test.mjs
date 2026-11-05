@@ -79,10 +79,11 @@ test("supports real character cards and compatible streaming", async () => {
 });
 
 test("supports standalone content and conversation controls", async () => {
-  const [contentImport, runtime, prototype] = await Promise.all([
+  const [contentImport, runtime, prototype, appearance] = await Promise.all([
     readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
     readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/ChatAppearancePanel.tsx", root), "utf8"),
   ]);
 
   assert.match(contentImport, /kind: "lorebook"/);
@@ -107,8 +108,29 @@ test("supports standalone content and conversation controls", async () => {
   assert.match(prototype, /会话、章节与记忆/);
   assert.doesNotMatch(prototype, /aria-label="添加附件"/);
   assert.match(prototype, /onPointerDown/);
-  assert.match(prototype, /全屏毛玻璃/);
-  assert.match(prototype, /角色卡图片/);
+  assert.match(appearance, /全屏/);
+  assert.match(appearance, /角色卡图片/);
+});
+
+test("ships persistent UI 2.0 chat appearance controls", async () => {
+  const [prototype, appearance, glass, types, defaults, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/ChatAppearancePanel.tsx", root), "utf8"),
+    readFile(new URL("app/components/GlassPanel.tsx", root), "utf8"),
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/defaults.ts", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(prototype, /data-message-style/);
+  assert.match(prototype, /showCharacterAvatar/);
+  assert.match(prototype, /回到最新消息/);
+  assert.match(appearance, /沉浸式|小说流/);
+  assert.match(appearance, /毛玻璃范围与质感/);
+  assert.match(glass, /lm-glass-opacity/);
+  assert.match(types, /glassScope/);
+  assert.match(defaults, /messageStyle: "novel-flow"/);
+  assert.match(styles, /only|data-glass-scope/);
+  assert.match(styles, /height:100dvh/);
 });
 
 test("supports persistent character card management", async () => {

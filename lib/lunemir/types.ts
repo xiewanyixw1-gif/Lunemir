@@ -224,12 +224,45 @@ export type ModelConfig = {
 
 export type AppearanceSettings = {
   theme: "moon" | "aurora" | "rose";
+  /** @deprecated Kept for v0.15 appearance backups. */
   blur: number;
+  /** @deprecated Kept for v0.15 appearance backups. */
   opacity: number;
   radius: number;
+  /** @deprecated Kept for v0.15 appearance backups. */
   glassMode: "full" | "messages";
   backgroundMode: "gradient" | "character" | "custom";
   backgroundImage?: string;
+  readingStyle: "cinematic" | "editorial" | "reader-glass";
+  messageStyle: "bubble" | "soft-card" | "novel-flow";
+  glassScope: "fullscreen" | "messages" | "chrome-only" | "none";
+  glassOpacity: number;
+  glassBlur: number;
+  glassBorderOpacity: number;
+  glassHighlight: number;
+  glassShadow: number;
+  backgroundBrightness: number;
+  backgroundBlur: number;
+  backgroundOverlay: number;
+  backgroundVignette: number;
+  backgroundFit: "cover" | "contain";
+  backgroundScale: number;
+  backgroundPositionX: number;
+  backgroundPositionY: number;
+  showCharacterAvatar: boolean;
+  showUserAvatar: boolean;
+  showCharacterName: boolean;
+  showUserName: boolean;
+  showTimestamp: boolean;
+  avatarShape: "circle" | "square" | "rounded";
+  avatarSize: number;
+  avatarGap: number;
+  fontFamily: "sans" | "serif" | "system";
+  fontSize: number;
+  fontWeight: number;
+  lineHeight: number;
+  paragraphSpacing: number;
+  messageMaxWidth: number;
 };
 
 export type PersistedSettings = {

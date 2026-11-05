@@ -86,21 +86,74 @@ async function createConversationRecord(
 
 function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSettings {
   const theme = value?.theme === "aurora" || value?.theme === "rose" ? value.theme : "moon";
-  const glassMode = value?.glassMode === "messages" ? "messages" : "full";
+  const glassScope = value?.glassScope === "messages"
+    || value?.glassScope === "chrome-only"
+    || value?.glassScope === "none"
+    ? value.glassScope
+    : value?.glassScope === "fullscreen"
+      ? "fullscreen"
+      : value?.glassMode === "messages"
+        ? "messages"
+        : value?.glassMode === "full"
+          ? "fullscreen"
+          : DEFAULT_APPEARANCE.glassScope;
   const backgroundMode = value?.backgroundMode === "gradient" || value?.backgroundMode === "custom"
     ? value.backgroundMode
     : "character";
   const numberOr = (candidate: number | undefined, fallback: number) => Number.isFinite(candidate) ? Number(candidate) : fallback;
+  const clamp = (candidate: number | undefined, minimum: number, maximum: number, fallback: number) => (
+    Math.min(maximum, Math.max(minimum, numberOr(candidate, fallback)))
+  );
+  const glassBlur = clamp(value?.glassBlur ?? value?.blur, 0, 40, DEFAULT_APPEARANCE.glassBlur);
+  const glassOpacity = clamp(value?.glassOpacity ?? value?.opacity, 0, 100, DEFAULT_APPEARANCE.glassOpacity);
   return {
     theme,
-    blur: Math.min(36, Math.max(4, numberOr(value?.blur, DEFAULT_APPEARANCE.blur))),
-    opacity: Math.min(95, Math.max(8, numberOr(value?.opacity, DEFAULT_APPEARANCE.opacity))),
-    radius: Math.min(36, Math.max(10, numberOr(value?.radius, DEFAULT_APPEARANCE.radius))),
-    glassMode,
+    blur: glassBlur,
+    opacity: glassOpacity,
+    radius: clamp(value?.radius, 10, 36, DEFAULT_APPEARANCE.radius),
+    glassMode: glassScope === "messages" ? "messages" : "full",
     backgroundMode,
     backgroundImage: typeof value?.backgroundImage === "string" && value.backgroundImage.startsWith("data:image/")
       ? value.backgroundImage
       : undefined,
+    readingStyle: value?.readingStyle === "editorial" || value?.readingStyle === "reader-glass"
+      ? value.readingStyle
+      : DEFAULT_APPEARANCE.readingStyle,
+    messageStyle: value?.messageStyle === "bubble" || value?.messageStyle === "soft-card"
+      ? value.messageStyle
+      : DEFAULT_APPEARANCE.messageStyle,
+    glassScope,
+    glassOpacity,
+    glassBlur,
+    glassBorderOpacity: clamp(value?.glassBorderOpacity, 0, 100, DEFAULT_APPEARANCE.glassBorderOpacity),
+    glassHighlight: clamp(value?.glassHighlight, 0, 100, DEFAULT_APPEARANCE.glassHighlight),
+    glassShadow: clamp(value?.glassShadow, 0, 100, DEFAULT_APPEARANCE.glassShadow),
+    backgroundBrightness: clamp(value?.backgroundBrightness, 20, 150, DEFAULT_APPEARANCE.backgroundBrightness),
+    backgroundBlur: clamp(value?.backgroundBlur, 0, 30, DEFAULT_APPEARANCE.backgroundBlur),
+    backgroundOverlay: clamp(value?.backgroundOverlay, 0, 100, DEFAULT_APPEARANCE.backgroundOverlay),
+    backgroundVignette: clamp(value?.backgroundVignette, 0, 100, DEFAULT_APPEARANCE.backgroundVignette),
+    backgroundFit: value?.backgroundFit === "contain" ? "contain" : DEFAULT_APPEARANCE.backgroundFit,
+    backgroundScale: clamp(value?.backgroundScale, 70, 180, DEFAULT_APPEARANCE.backgroundScale),
+    backgroundPositionX: clamp(value?.backgroundPositionX, 0, 100, DEFAULT_APPEARANCE.backgroundPositionX),
+    backgroundPositionY: clamp(value?.backgroundPositionY, 0, 100, DEFAULT_APPEARANCE.backgroundPositionY),
+    showCharacterAvatar: value?.showCharacterAvatar ?? DEFAULT_APPEARANCE.showCharacterAvatar,
+    showUserAvatar: value?.showUserAvatar ?? DEFAULT_APPEARANCE.showUserAvatar,
+    showCharacterName: value?.showCharacterName ?? DEFAULT_APPEARANCE.showCharacterName,
+    showUserName: value?.showUserName ?? DEFAULT_APPEARANCE.showUserName,
+    showTimestamp: value?.showTimestamp ?? DEFAULT_APPEARANCE.showTimestamp,
+    avatarShape: value?.avatarShape === "circle" || value?.avatarShape === "square"
+      ? value.avatarShape
+      : DEFAULT_APPEARANCE.avatarShape,
+    avatarSize: clamp(value?.avatarSize, 28, 64, DEFAULT_APPEARANCE.avatarSize),
+    avatarGap: clamp(value?.avatarGap, 4, 24, DEFAULT_APPEARANCE.avatarGap),
+    fontFamily: value?.fontFamily === "sans" || value?.fontFamily === "system"
+      ? value.fontFamily
+      : DEFAULT_APPEARANCE.fontFamily,
+    fontSize: clamp(value?.fontSize, 14, 24, DEFAULT_APPEARANCE.fontSize),
+    fontWeight: clamp(value?.fontWeight, 300, 700, DEFAULT_APPEARANCE.fontWeight),
+    lineHeight: clamp(value?.lineHeight, 1.4, 2.4, DEFAULT_APPEARANCE.lineHeight),
+    paragraphSpacing: clamp(value?.paragraphSpacing, 0, 32, DEFAULT_APPEARANCE.paragraphSpacing),
+    messageMaxWidth: clamp(value?.messageMaxWidth, 520, 1080, DEFAULT_APPEARANCE.messageMaxWidth),
   };
 }
 

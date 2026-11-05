@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
+import { ChatAppearancePanel } from "./ChatAppearancePanel";
+import { GlassPanel } from "./GlassPanel";
 import { GreetingPickerModal } from "./GreetingPickerModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
 import { PersonaManagerModal } from "./PersonaManagerModal";
@@ -24,14 +26,8 @@ const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "characters", icon: "◇", label: "角色" },
   { id: "lore", icon: "⌑", label: "世界书" },
   { id: "presets", icon: "≋", label: "预设" },
-  { id: "themes", icon: "✦", label: "主题" },
+  { id: "themes", icon: "✦", label: "外观" },
   { id: "settings", icon: "⌬", label: "设置" },
-];
-
-const themeOptions = [
-  { id: "moon", name: "Moon Glass", colors: ["#171336", "#9a7cff", "#6edcff"] },
-  { id: "aurora", name: "Aurora Mist", colors: ["#071f26", "#54e0bd", "#7ca8ff"] },
-  { id: "rose", name: "Rose Nocturne", colors: ["#2a1024", "#ff82be", "#9d86ff"] },
 ];
 
 function CharacterOrb({ small = false, avatarDataUrl, name }: { small?: boolean; avatarDataUrl?: string; name?: string }) {
@@ -44,6 +40,25 @@ function CharacterOrb({ small = false, avatarDataUrl, name }: { small?: boolean;
       {!avatarDataUrl && <><span className="orb-moon" /><span className="orb-glow" /></>}
     </span>
   );
+}
+
+function MessageAvatar({ image, name, side }: { image?: string; name: string; side: "character" | "user" }) {
+  return (
+    <span
+      className={`message-avatar ${side}-avatar`}
+      style={image ? { backgroundImage: `url(${image})` } : undefined}
+      aria-label={`${name}的头像`}
+    >{image ? "" : name.charAt(0).toUpperCase()}</span>
+  );
+}
+
+function messageDayLabel(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  const sameDay = date.getFullYear() === today.getFullYear()
+    && date.getMonth() === today.getMonth()
+    && date.getDate() === today.getDate();
+  return sameDay ? "今天" : date.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
 }
 
 export function LunemirPrototype() {
@@ -69,6 +84,7 @@ export function LunemirPrototype() {
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
+  const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
@@ -96,6 +112,8 @@ export function LunemirPrototype() {
     if (!content || runtime.streaming) return;
     followOutputRef.current = true;
     setDraft("");
+    const textarea = event.currentTarget.querySelector("textarea");
+    if (textarea) textarea.style.height = "auto";
     void runtime.sendMessage(content);
   }
 
@@ -113,9 +131,29 @@ export function LunemirPrototype() {
     ? Math.min(100, Math.round(runtime.contextReport.estimatedTokens / runtime.contextReport.limit * 100))
     : 0;
   const appearanceStyle = {
-    "--glass-blur": `${runtime.appearance.blur}px`,
-    "--panel-opacity": runtime.appearance.opacity / 100,
+    "--glass-blur": `${runtime.appearance.glassBlur}px`,
+    "--panel-opacity": runtime.appearance.glassOpacity / 100,
     "--panel-radius": `${runtime.appearance.radius}px`,
+    "--lm-glass-opacity": runtime.appearance.glassOpacity / 100,
+    "--lm-glass-blur": `${runtime.appearance.glassBlur}px`,
+    "--lm-glass-border-opacity": runtime.appearance.glassBorderOpacity / 100,
+    "--lm-glass-highlight": runtime.appearance.glassHighlight / 100,
+    "--lm-glass-shadow": runtime.appearance.glassShadow / 100,
+    "--lm-background-brightness": `${runtime.appearance.backgroundBrightness}%`,
+    "--lm-background-blur": `${runtime.appearance.backgroundBlur}px`,
+    "--lm-background-overlay": runtime.appearance.backgroundOverlay / 100,
+    "--lm-background-vignette": runtime.appearance.backgroundVignette / 100,
+    "--lm-background-fit": runtime.appearance.backgroundFit,
+    "--lm-background-scale": runtime.appearance.backgroundScale / 100,
+    "--lm-background-position-x": `${runtime.appearance.backgroundPositionX}%`,
+    "--lm-background-position-y": `${runtime.appearance.backgroundPositionY}%`,
+    "--lm-avatar-size": `${runtime.appearance.avatarSize}px`,
+    "--lm-avatar-gap": `${runtime.appearance.avatarGap}px`,
+    "--lm-message-font-size": `${runtime.appearance.fontSize}px`,
+    "--lm-message-font-weight": runtime.appearance.fontWeight,
+    "--lm-message-line-height": runtime.appearance.lineHeight,
+    "--lm-paragraph-spacing": `${runtime.appearance.paragraphSpacing}px`,
+    "--lm-chat-max-width": `${runtime.appearance.messageMaxWidth}px`,
   } as CSSProperties;
   const activeBackground = runtime.appearance.backgroundMode === "custom"
     ? runtime.appearance.backgroundImage
@@ -159,7 +197,16 @@ export function LunemirPrototype() {
     const messageList = messageListRef.current;
     if (!messageList) return;
     messageList.scrollTo({ top: messageList.scrollHeight, behavior: runtime.streaming ? "auto" : "smooth" });
+    setShowJumpToLatest(false);
   }, [runtime.messages.length, lastMessageContent, runtime.streaming, section]);
+
+  function scrollToLatest() {
+    followOutputRef.current = true;
+    const messageList = messageListRef.current;
+    if (!messageList) return;
+    messageList.scrollTo({ top: messageList.scrollHeight, behavior: "smooth" });
+    setShowJumpToLatest(false);
+  }
 
   useEffect(() => {
     if (!phoneOpen || phoneApp !== "messages") return;
@@ -243,12 +290,26 @@ export function LunemirPrototype() {
   }
 
   return (
-    <main className="lunemir-app" data-theme={runtime.appearance.theme} data-glass-mode={runtime.appearance.glassMode} data-has-background={activeBackground ? "true" : "false"} data-section={section} style={appearanceStyle}>
+    <main
+      className="lunemir-app"
+      data-theme={runtime.appearance.theme}
+      data-glass-mode={runtime.appearance.glassMode}
+      data-glass-scope={runtime.appearance.glassScope}
+      data-message-style={runtime.appearance.messageStyle}
+      data-reading-style={runtime.appearance.readingStyle}
+      data-avatar-shape={runtime.appearance.avatarShape}
+      data-font-family={runtime.appearance.fontFamily}
+      data-has-background={activeBackground ? "true" : "false"}
+      data-section={section}
+      style={appearanceStyle}
+    >
       <div className={activeBackground ? "scene-background has-image" : "scene-background"} style={activeBackground ? { backgroundImage: `url("${activeBackground}")` } : undefined} />
+      <div className="scene-overlay" />
+      <div className="scene-glass" />
       <div className="ambient ambient-one" />
       <div className="ambient ambient-two" />
 
-      <aside className="side-rail glass-panel" aria-label="主导航">
+      <GlassPanel as="aside" className="side-rail" aria-label="主导航">
         <div className="brand-mark" aria-hidden="true">
           <span className="brand-crescent" />
         </div>
@@ -269,24 +330,29 @@ export function LunemirPrototype() {
         <button className="profile-button" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined} onClick={() => setPersonaOpen(true)} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`} title={`当前人设：${runtime.activePersona?.name ?? "旅行者"} · 点击编辑或切换`}>
           {runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
         </button>
-      </aside>
+      </GlassPanel>
 
-      <section className="workspace glass-panel">
+      <GlassPanel as="section" className="workspace">
         <header className="top-bar">
           <div className="top-title">
             {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
             <div>
-              <p>{section === "chat" ? `${runtime.activeCharacter?.spec.toUpperCase() ?? "CARD"} · ${runtime.activeCharacter?.sourceFormat.toUpperCase() ?? "LOCAL"}` : "LUNEMIR"}</p>
-              <h1>{section === "chat" ? `与 ${activeName} 的对话` : pageTitle}</h1>
+              <p>{section === "chat" ? runtime.activeConversation?.title ?? "当前剧情" : "LUNEMIR"}</p>
+              <h1>{section === "chat" ? activeName : pageTitle}</h1>
             </div>
           </div>
           <div className="top-actions">
             <span className="secure-state"><i /> IndexedDB 已就绪</span>
-            {section === "chat" && <>
-              <button className="icon-button" onClick={() => setSessionOpen(true)} aria-label="打开会话与记忆管理">≡</button>
-              {greetingOptions.length > 1 ? <button className="icon-button greeting-toggle" onClick={() => setGreetingPickerOpen(true)} aria-label={`选择 ${activeName} 的开场白`} title={`${greetingOptions.length} 条开场白`}>↻</button> : null}
-              <button className="icon-button context-toggle" onClick={() => setContextOpen(!contextOpen)} aria-label="切换上下文面板">⌘</button>
-            </>}
+            {section === "chat" && (
+              <details className="chat-header-menu">
+                <summary className="icon-button" aria-label="打开聊天菜单">•••</summary>
+                <div>
+                  <button type="button" onClick={() => setSessionOpen(true)}>会话、章节与记忆</button>
+                  {greetingOptions.length > 1 ? <button type="button" onClick={() => setGreetingPickerOpen(true)}>选择开场白 <span>{greetingOptions.length}</span></button> : null}
+                  <button type="button" className="context-menu-action" onClick={() => setContextOpen(!contextOpen)}>上下文详情</button>
+                </div>
+              </details>
+            )}
           </div>
         </header>
 
@@ -298,73 +364,93 @@ export function LunemirPrototype() {
               ref={messageListRef}
               onScroll={(event) => {
                 const target = event.currentTarget;
-                followOutputRef.current = target.scrollHeight - target.scrollTop - target.clientHeight < 140;
+                const nearLatest = target.scrollHeight - target.scrollTop - target.clientHeight < 140;
+                followOutputRef.current = nearLatest;
+                setShowJumpToLatest(!nearLatest);
               }}
             >
-              <div className="date-divider"><span>今天</span></div>
               {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
-              {runtime.messages.map((message, index) => message.status === "streaming" && !message.content ? (
-                <div key={message.id} className="typing-bubble" aria-label={`${activeName} 正在输入`}><i /><i /><i /></div>
-              ) : (
-                <article key={message.id} className={message.role === "user" ? "message user-message" : "message character-message"}>
-                  <div className="message-meta">
-                    <strong>{message.role === "user" ? runtime.activePersona?.name ?? "You" : activeName}</strong>
-                    <time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time>
-                    {message.editedAt && <em>已编辑</em>}
-                    {message.status === "stopped" && <em>已停止</em>}
-                    {message.status === "error" && <em>失败</em>}
-                  </div>
-                  {editingMessageId === message.id ? (
-                    <div className="message-editor">
-                      <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
-                      <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
-                    </div>
-                  ) : message.role === "assistant" && activeOutputRenderer?.enabled ? (
-                    <SafeMessageContent source={message.content} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
-                  ) : <p>{message.content}</p>}
-                  {!runtime.streaming && editingMessageId !== message.id && (
-                    <details className="message-tools">
-                      <summary aria-label="打开消息操作">•••</summary>
-                      <div className="message-actions">
-                        {message.role === "assistant" && activeOutputRenderer?.enabled ? <button onClick={() => setRawMessageIds((current) => {
-                          const next = new Set(current);
-                          if (next.has(message.id)) next.delete(message.id);
-                          else next.add(message.id);
-                          return next;
-                        })}>{rawMessageIds.has(message.id) ? "查看美化" : "查看原文"}</button> : null}
-                        <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
-                        <button onClick={() => void runtime.branchConversation(message.id)}>从这里分支</button>
-                        <button onClick={() => void runtime.addMemoryCandidate(message.id)} disabled={(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id)}>{(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id) ? "已加入记忆" : "记住"}</button>
-                        <button className="danger-action" onClick={() => { if (window.confirm("删除这条消息？相关章节点与待确认记忆也会一并移除。")) void runtime.deleteMessage(message.id); }}>删除</button>
-                        {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
+              {runtime.messages.map((message, index) => {
+                const isUser = message.role === "user";
+                const speakerName = isUser ? runtime.activePersona?.name ?? "You" : activeName;
+                const showAvatar = isUser ? runtime.appearance.showUserAvatar : runtime.appearance.showCharacterAvatar;
+                const showName = isUser ? runtime.appearance.showUserName : runtime.appearance.showCharacterName;
+                const avatar = isUser ? runtime.activePersona?.avatarDataUrl : runtime.activeCharacter?.avatarDataUrl;
+                const previousMessage = runtime.messages[index - 1];
+                const showDay = !previousMessage || messageDayLabel(previousMessage.createdAt) !== messageDayLabel(message.createdAt);
+                return (
+                  <Fragment key={message.id}>
+                    {showDay ? <div className="date-divider"><span>{messageDayLabel(message.createdAt)}</span></div> : null}
+                    {message.status === "streaming" && !message.content ? (
+                      <div className="message-row character-row typing-row">
+                        {runtime.appearance.showCharacterAvatar ? <MessageAvatar image={runtime.activeCharacter?.avatarDataUrl} name={activeName} side="character" /> : null}
+                        <div className="typing-bubble" aria-label={`${activeName} 正在输入`}><i /><i /><i /></div>
                       </div>
-                    </details>
-                  )}
-                  {(message.alternatives?.length ?? 0) > 1 && editingMessageId !== message.id && (
-                    <div className="message-versions" aria-label="回复版本切换">
-                      <button
-                        onClick={() => void runtime.selectMessageAlternative(message.id, Math.max(0, (message.activeAlternative ?? 0) - 1))}
-                        disabled={(message.activeAlternative ?? 0) === 0 || runtime.streaming}
-                        aria-label="上一个回复版本"
-                      >‹</button>
-                      <span>{(message.activeAlternative ?? 0) + 1} / {message.alternatives?.length}</span>
-                      <button
-                        onClick={() => void runtime.selectMessageAlternative(message.id, Math.min((message.alternatives?.length ?? 1) - 1, (message.activeAlternative ?? 0) + 1))}
-                        disabled={(message.activeAlternative ?? 0) >= (message.alternatives?.length ?? 1) - 1 || runtime.streaming}
-                        aria-label="下一个回复版本"
-                      >›</button>
-                    </div>
-                  )}
-                </article>
-              ))}
+                    ) : (
+                      <div className={isUser ? "message-row user-row" : "message-row character-row"}>
+                        {!isUser && showAvatar ? <MessageAvatar image={avatar} name={speakerName} side="character" /> : null}
+                        <article className={isUser ? "message user-message" : "message character-message"}>
+                          <div className="message-meta">
+                            {showName ? <strong>{speakerName}</strong> : null}
+                            {runtime.appearance.showTimestamp ? <time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> : null}
+                            {message.editedAt && <em>已编辑</em>}
+                            {message.status === "stopped" && <em>已停止</em>}
+                            {message.status === "error" && <em>失败</em>}
+                          </div>
+                          {editingMessageId === message.id ? (
+                            <div className="message-editor">
+                              <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
+                              <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
+                            </div>
+                          ) : message.role === "assistant" && activeOutputRenderer?.enabled ? (
+                            <SafeMessageContent source={message.content} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
+                          ) : <p>{message.content}</p>}
+                          {!runtime.streaming && editingMessageId !== message.id && (
+                            <details className="message-tools">
+                              <summary aria-label="打开消息操作">•••</summary>
+                              <div className="message-actions">
+                                {message.role === "assistant" && activeOutputRenderer?.enabled ? <button onClick={() => setRawMessageIds((current) => {
+                                  const next = new Set(current);
+                                  if (next.has(message.id)) next.delete(message.id);
+                                  else next.add(message.id);
+                                  return next;
+                                })}>{rawMessageIds.has(message.id) ? "查看美化" : "查看原文"}</button> : null}
+                                <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
+                                <button onClick={() => void runtime.branchConversation(message.id)}>从这里分支</button>
+                                <button onClick={() => void runtime.addMemoryCandidate(message.id)} disabled={(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id)}>{(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id) ? "已加入记忆" : "记住"}</button>
+                                <button className="danger-action" onClick={() => { if (window.confirm("删除这条消息？相关章节点与待确认记忆也会一并移除。")) void runtime.deleteMessage(message.id); }}>删除</button>
+                                {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
+                              </div>
+                            </details>
+                          )}
+                          {(message.alternatives?.length ?? 0) > 1 && editingMessageId !== message.id && (
+                            <div className="message-versions" aria-label="回复版本切换">
+                              <button onClick={() => void runtime.selectMessageAlternative(message.id, Math.max(0, (message.activeAlternative ?? 0) - 1))} disabled={(message.activeAlternative ?? 0) === 0 || runtime.streaming} aria-label="上一个回复版本">‹</button>
+                              <span>{(message.activeAlternative ?? 0) + 1} / {message.alternatives?.length}</span>
+                              <button onClick={() => void runtime.selectMessageAlternative(message.id, Math.min((message.alternatives?.length ?? 1) - 1, (message.activeAlternative ?? 0) + 1))} disabled={(message.activeAlternative ?? 0) >= (message.alternatives?.length ?? 1) - 1 || runtime.streaming} aria-label="下一个回复版本">›</button>
+                            </div>
+                          )}
+                        </article>
+                        {isUser && showAvatar ? <MessageAvatar image={avatar} name={speakerName} side="user" /> : null}
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
             </div>
+
+            {showJumpToLatest ? <button className="jump-to-latest" type="button" onClick={scrollToLatest}>回到最新消息 ↓</button> : null}
 
             <form className="composer" onSubmit={sendMessage}>
               <label className="composer-field">
                 <span className="sr-only">输入消息</span>
                 <textarea
                   value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
+                  onChange={(event) => {
+                    setDraft(event.target.value);
+                    event.currentTarget.style.height = "auto";
+                    event.currentTarget.style.height = `${Math.min(event.currentTarget.scrollHeight, 132)}px`;
+                  }}
                   onKeyDown={(event) => {
                     if (event.key === "Enter" && !event.shiftKey) {
                       event.preventDefault();
@@ -478,41 +564,13 @@ export function LunemirPrototype() {
         )}
 
         {section === "themes" && (
-          <div className="content-view">
-            <div className="view-heading">
-              <div><span className="eyebrow">APPEARANCE</span><h2>把这个世界变成你的样子</h2></div>
-              <span className="subtle-label">实时预览</span>
-            </div>
-            <div className="theme-grid">
-              {themeOptions.map((option) => (
-                <button key={option.id} className={runtime.appearance.theme === option.id ? "theme-card is-selected" : "theme-card"} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, theme: option.id as "moon" | "aurora" | "rose" })}>
-                  <span className="theme-preview" style={{ background: `linear-gradient(145deg, ${option.colors.join(",")})` }}><i /><i /></span>
-                  <strong>{option.name}</strong><small>{runtime.appearance.theme === option.id ? "正在使用" : "应用主题"}</small>
-                </button>
-              ))}
-            </div>
-            <div className="appearance-mode-grid">
-              <section className="appearance-mode-card">
-                <div><span className="eyebrow">GLASS LAYOUT</span><h3>毛玻璃范围</h3><p>全屏模式更统一；消息框模式会露出更多背景，更适合沉浸式聊天。</p></div>
-                <div className="segmented-control">
-                  <button className={runtime.appearance.glassMode === "full" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, glassMode: "full" })}>全屏毛玻璃</button>
-                  <button className={runtime.appearance.glassMode === "messages" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, glassMode: "messages" })}>消息框毛玻璃</button>
-                </div>
-              </section>
-              <section className="appearance-mode-card">
-                <div><span className="eyebrow">SCENE BACKGROUND</span><h3>聊天背景</h3><p>背景只保存在当前设备；角色卡没有图片时会自动使用 Lunemir 默认渐变。</p></div>
-                <div className="background-actions">
-                  <button className={runtime.appearance.backgroundMode === "character" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, backgroundMode: "character" })}>角色卡图片</button>
-                  <button className={runtime.appearance.backgroundMode === "gradient" ? "is-active" : ""} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, backgroundMode: "gradient" })}>默认渐变</button>
-                  <label className={runtime.appearance.backgroundMode === "custom" ? "is-active" : ""}>自定义图片<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runtime.saveCustomBackground(file); event.currentTarget.value = ""; }} /></label>
-                </div>
-              </section>
-            </div>
-            <div className="slider-panel">
-              <label><span>玻璃模糊度 <b>{runtime.appearance.blur}px</b></span><input type="range" min="4" max="36" value={runtime.appearance.blur} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, blur: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, blur: Number(event.currentTarget.value) })} /></label>
-              <label><span>面板不透明度 <b>{runtime.appearance.opacity}%</b></span><input type="range" min="8" max="95" value={runtime.appearance.opacity} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, opacity: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, opacity: Number(event.currentTarget.value) })} /></label>
-              <label><span>圆角强度 <b>{runtime.appearance.radius}px</b></span><input type="range" min="10" max="36" value={runtime.appearance.radius} onChange={(event) => runtime.previewAppearance({ ...runtime.appearance, radius: Number(event.target.value) })} onPointerUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} onKeyUp={(event) => void runtime.saveAppearance({ ...runtime.appearance, radius: Number(event.currentTarget.value) })} /></label>
-            </div>
+          <div className="content-view appearance-view">
+            <ChatAppearancePanel
+              value={runtime.appearance}
+              onPreview={runtime.previewAppearance}
+              onSave={(next) => void runtime.saveAppearance(next)}
+              onUploadBackground={(file) => void runtime.saveCustomBackground(file)}
+            />
           </div>
         )}
 
@@ -535,9 +593,9 @@ export function LunemirPrototype() {
             </div>
           </div>
         )}
-      </section>
+      </GlassPanel>
 
-      {section === "chat" && <aside className={contextOpen ? "context-panel glass-panel is-open" : "context-panel glass-panel"}>
+      {section === "chat" && <GlassPanel as="aside" className={contextOpen ? "context-panel is-open" : "context-panel"}>
         <div className="context-heading"><div><span className="eyebrow">CONTEXT</span><h2>真实上下文预估</h2></div><button onClick={() => setContextOpen(false)} aria-label="关闭上下文">×</button></div>
         <div className="token-ring" style={{ background: `conic-gradient(var(--accent) 0 ${tokenUsage}%, rgba(255,255,255,.06) ${tokenUsage}% 100%)` }}><span><strong>{runtime.contextReport?.estimatedTokens.toLocaleString() ?? 0}</strong><small>/ {runtime.contextReport?.limit.toLocaleString() ?? 0} tokens</small></span></div>
         <div className="context-block">
@@ -555,7 +613,7 @@ export function LunemirPrototype() {
           {(runtime.contextReport?.warnings ?? []).map((warning) => <p className="context-warning" key={warning}>{warning}</p>)}
         </div>
         <div className="context-footer"><span>上下文余量</span><strong>{(runtime.contextReport?.health ?? 100) > 25 ? "良好" : "注意"} · {runtime.contextReport?.health ?? 100}%</strong><div><i style={{ width: `${runtime.contextReport?.health ?? 100}%` }} /></div></div>
-      </aside>}
+      </GlassPanel>}
 
       {runtime.runtimeError && <div className="runtime-toast" role="alert"><span>!</span><p>{runtime.runtimeError}</p><button onClick={runtime.clearRuntimeError} aria-label="关闭错误提示">×</button></div>}
 
