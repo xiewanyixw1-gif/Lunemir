@@ -80,9 +80,32 @@ export type PersonaRecord = {
   schemaVersion: 1;
   name: string;
   description: string;
+  avatarDataUrl?: string;
+  appearance?: string;
+  personality?: string;
+  identity?: string;
+  occupation?: string;
+  background?: string;
+  relationships?: string;
+  currentState?: string;
+  notes?: string;
   createdAt: string;
   updatedAt: string;
 };
+
+export type PersonaEditorValues = Pick<PersonaRecord,
+  | "name"
+  | "description"
+  | "avatarDataUrl"
+  | "appearance"
+  | "personality"
+  | "identity"
+  | "occupation"
+  | "background"
+  | "relationships"
+  | "currentState"
+  | "notes"
+>;
 
 export type PromptModule = {
   id: string;
@@ -195,6 +218,7 @@ export type PersistedSettings = {
   activePersonaId?: string;
   activePresetId?: string;
   activeConversationIds?: Record<string, string>;
+  personaAssignments?: Record<string, string>;
   lorebookAssignments?: Record<string, string[]>;
   appearance?: AppearanceSettings;
   model: ModelConfig;

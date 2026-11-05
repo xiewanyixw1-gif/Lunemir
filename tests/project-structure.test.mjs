@@ -170,3 +170,23 @@ test("supports visual prompt preset composition and conflict checks", async () =
   assert.match(presetLogic, /analyzePromptModules/);
   assert.match(presetLogic, /第一人称/);
 });
+
+test("supports persistent personas bound to individual stories", async () => {
+  const [manager, runtime, storage, context, types] = await Promise.all([
+    readFile(new URL("app/components/PersonaManagerModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+  ]);
+  assert.match(manager, /创建并应用/);
+  assert.match(manager, /应用到当前剧情/);
+  assert.match(manager, /选择头像/);
+  assert.match(runtime, /activatePersona/);
+  assert.match(runtime, /duplicatePersona/);
+  assert.match(runtime, /deletePersonaProfile/);
+  assert.match(runtime, /personaAssignments/);
+  assert.match(storage, /deletePersona/);
+  assert.match(context, /人物关系/);
+  assert.match(types, /avatarDataUrl/);
+});

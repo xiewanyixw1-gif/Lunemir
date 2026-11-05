@@ -139,6 +139,10 @@ export function savePersona(persona: PersonaRecord) {
   return put(PERSONA_STORE, persona);
 }
 
+export function deletePersona(personaId: string) {
+  return remove(PERSONA_STORE, personaId);
+}
+
 export function listPresets() {
   return getAll<PresetRecord>(PRESET_STORE);
 }

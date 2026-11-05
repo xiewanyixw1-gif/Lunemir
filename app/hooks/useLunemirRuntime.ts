@@ -11,6 +11,7 @@ import {
   deleteCharacter as removeStoredCharacter,
   deleteConversation as removeStoredConversation,
   deleteLorebook as removeStoredLorebook,
+  deletePersona as removeStoredPersona,
   deletePreset as removeStoredPreset,
   deleteStoryEvents,
   getSettings,
@@ -39,6 +40,7 @@ import type {
   LorebookEditorValues,
   LorebookRecord,
   ModelConfig,
+  PersonaEditorValues,
   PersonaRecord,
   PresetEditorValues,
   PresetRecord,
@@ -108,6 +110,7 @@ export function useLunemirRuntime() {
   const [activeCharacterId, setActiveCharacterId] = useState("");
   const [activePersonaId, setActivePersonaId] = useState("");
   const [activePresetId, setActivePresetId] = useState("");
+  const [personaAssignments, setPersonaAssignments] = useState<Record<string, string>>({});
   const [lorebookAssignments, setLorebookAssignments] = useState<Record<string, string[]>>({});
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
   const [conversation, setConversation] = useState<ConversationRecord | null>(null);
@@ -128,6 +131,7 @@ export function useLunemirRuntime() {
   const storyEventsRef = useRef<StoryEvent[]>([]);
   const phoneEventCheckRef = useRef(false);
   const contextLimitRef = useRef(DEFAULT_MODEL_CONFIG.contextLimit);
+  const personaLibraryRef = useRef<PersonaRecord[]>([]);
   const contextResourcesRef = useRef<{
     persona: PersonaRecord | null;
     preset: PresetRecord | null;
@@ -185,6 +189,10 @@ export function useLunemirRuntime() {
     }
     const nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
       ?? characterConversations[0];
+    const nextPersona = personaLibraryRef.current.find((persona) => persona.id === settings.personaAssignments?.[nextConversation.id])
+      ?? personaLibraryRef.current.find((persona) => persona.id === settings.activePersonaId)
+      ?? personaLibraryRef.current[0]
+      ?? null;
     const nextStoryEvents = await listStoryEvents(nextConversation.id);
     setConversations(characterConversations);
     setConversation(nextConversation);
@@ -196,11 +204,19 @@ export function useLunemirRuntime() {
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
     contextResourcesRef.current.storyEvents = nextStoryEvents;
+    contextResourcesRef.current.persona = nextPersona;
+    setActivePersonaId(nextPersona?.id ?? "");
+    const nextPersonaAssignments = nextPersona
+      ? { ...(settings.personaAssignments ?? {}), [nextConversation.id]: nextPersona.id }
+      : settings.personaAssignments ?? {};
+    setPersonaAssignments(nextPersonaAssignments);
     refreshContext(character, nextConversation.messages);
     await saveSettings({
       ...settings,
       activeCharacterId: character.id,
+      activePersonaId: nextPersona?.id,
       activeConversationIds: { ...(settings.activeConversationIds ?? {}), [character.id]: nextConversation.id },
+      personaAssignments: nextPersonaAssignments,
       updatedAt: new Date().toISOString(),
     });
   }, [refreshContext]);
@@ -232,9 +248,11 @@ export function useLunemirRuntime() {
     setCharacters(storedCharacters.sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)));
     setLorebooks(storedLorebooks);
     setPersonas(storedPersonas);
+    personaLibraryRef.current = storedPersonas;
     setPresets(storedPresets);
     setActivePersonaId(selectedPersona.id);
     setActivePresetId(selectedPreset?.id ?? "");
+    setPersonaAssignments(settings.personaAssignments ?? {});
     setLorebookAssignments(assignments);
     contentLibraryRef.current = { lorebooks: storedLorebooks, assignments };
     contextResourcesRef.current = {
@@ -278,6 +296,11 @@ export function useLunemirRuntime() {
   async function activateConversationRecord(nextConversation: ConversationRecord) {
     const character = activeCharacter;
     if (!character) return;
+    const settings = await getSettings();
+    const nextPersona = personaLibraryRef.current.find((persona) => persona.id === settings.personaAssignments?.[nextConversation.id])
+      ?? personaLibraryRef.current.find((persona) => persona.id === settings.activePersonaId)
+      ?? personaLibraryRef.current[0]
+      ?? null;
     setConversation(nextConversation);
     setMessages(nextConversation.messages);
     const nextStoryEvents = await listStoryEvents(nextConversation.id);
@@ -288,11 +311,18 @@ export function useLunemirRuntime() {
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
     contextResourcesRef.current.storyEvents = nextStoryEvents;
+    contextResourcesRef.current.persona = nextPersona;
+    setActivePersonaId(nextPersona?.id ?? "");
+    const nextPersonaAssignments = nextPersona
+      ? { ...(settings.personaAssignments ?? {}), [nextConversation.id]: nextPersona.id }
+      : settings.personaAssignments ?? {};
+    setPersonaAssignments(nextPersonaAssignments);
     refreshContext(character, nextConversation.messages);
-    const settings = await getSettings();
     await saveSettings({
       ...settings,
+      activePersonaId: nextPersona?.id,
       activeConversationIds: { ...(settings.activeConversationIds ?? {}), [character.id]: nextConversation.id },
+      personaAssignments: nextPersonaAssignments,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -392,10 +422,16 @@ export function useLunemirRuntime() {
     const settings = await getSettings();
     const activeConversationIds = { ...(settings.activeConversationIds ?? {}) };
     delete activeConversationIds[characterId];
+    const removedStoryIds = new Set(targetConversations.map((item) => item.id));
+    const nextPersonaAssignments = Object.fromEntries(
+      Object.entries(settings.personaAssignments ?? {}).filter(([storyId]) => !removedStoryIds.has(storyId)),
+    );
+    setPersonaAssignments(nextPersonaAssignments);
     await saveSettings({
       ...settings,
       activeCharacterId: settings.activeCharacterId === characterId ? remaining[0].id : settings.activeCharacterId,
       activeConversationIds,
+      personaAssignments: nextPersonaAssignments,
       updatedAt: new Date().toISOString(),
     });
     if (activeCharacter?.id === characterId) await selectCharacter(remaining[0]);
@@ -495,6 +531,12 @@ export function useLunemirRuntime() {
     if (!character || streaming) return;
     await deleteStoryEvents(conversationId);
     await removeStoredConversation(conversationId);
+    const settings = await getSettings();
+    const nextPersonaAssignments = Object.fromEntries(
+      Object.entries(settings.personaAssignments ?? {}).filter(([storyId]) => storyId !== conversationId),
+    );
+    setPersonaAssignments(nextPersonaAssignments);
+    await saveSettings({ ...settings, personaAssignments: nextPersonaAssignments, updatedAt: new Date().toISOString() });
     let remaining = conversations.filter((item) => item.id !== conversationId);
     if (remaining.length === 0) remaining = [await createConversationRecord(character, { title: "新的故事" })];
     setConversations(remaining);
@@ -1050,21 +1092,123 @@ export function useLunemirRuntime() {
     URL.revokeObjectURL(url);
   }
 
-  async function savePersonaProfile(name: string, description: string) {
-    const now = new Date().toISOString();
-    const persona: PersonaRecord = activePersona
-      ? { ...activePersona, name: name.trim() || "旅行者", description: description.trim(), updatedAt: now }
-      : { id: createId("persona"), schemaVersion: 1, name: name.trim() || "旅行者", description: description.trim(), createdAt: now, updatedAt: now };
-    await savePersona(persona);
-    const nextPersonas = activePersona
-      ? personas.map((item) => item.id === persona.id ? persona : item)
-      : [persona, ...personas];
-    setPersonas(nextPersonas);
+  async function applyPersonaRecord(persona: PersonaRecord) {
     setActivePersonaId(persona.id);
     contextResourcesRef.current.persona = persona;
     const settings = await getSettings();
-    await saveSettings({ ...settings, activePersonaId: persona.id, updatedAt: now });
+    const nextAssignments = conversation
+      ? { ...(settings.personaAssignments ?? {}), [conversation.id]: persona.id }
+      : settings.personaAssignments ?? {};
+    setPersonaAssignments(nextAssignments);
+    await saveSettings({
+      ...settings,
+      activePersonaId: persona.id,
+      personaAssignments: nextAssignments,
+      updatedAt: new Date().toISOString(),
+    });
     if (activeCharacter) refreshContext(activeCharacter, messages);
+  }
+
+  async function savePersonaProfile(personaId: string | undefined, values: PersonaEditorValues) {
+    const existing = personaId ? personas.find((persona) => persona.id === personaId) : undefined;
+    const now = new Date().toISOString();
+    const normalized: PersonaEditorValues = {
+      ...values,
+      name: values.name.trim(),
+      description: values.description.trim(),
+      appearance: values.appearance?.trim(),
+      personality: values.personality?.trim(),
+      identity: values.identity?.trim(),
+      occupation: values.occupation?.trim(),
+      background: values.background?.trim(),
+      relationships: values.relationships?.trim(),
+      currentState: values.currentState?.trim(),
+      notes: values.notes?.trim(),
+    };
+    if (!normalized.name) {
+      setRuntimeError("人设名称不能为空。");
+      return null;
+    }
+    const persona: PersonaRecord = existing
+      ? { ...existing, ...normalized, updatedAt: now }
+      : {
+          id: createId("persona"),
+          schemaVersion: 1,
+          ...normalized,
+          createdAt: now,
+          updatedAt: now,
+        };
+    await savePersona(persona);
+    const nextPersonas = existing
+      ? personas.map((item) => item.id === persona.id ? persona : item)
+      : [persona, ...personas];
+    setPersonas(nextPersonas);
+    personaLibraryRef.current = nextPersonas;
+    if (!existing) await applyPersonaRecord(persona);
+    else if (activePersonaId === persona.id) {
+      contextResourcesRef.current.persona = persona;
+      if (activeCharacter) refreshContext(activeCharacter, messages);
+    }
+    return persona;
+  }
+
+  async function activatePersona(personaId: string) {
+    const persona = personas.find((item) => item.id === personaId);
+    if (persona) await applyPersonaRecord(persona);
+  }
+
+  async function duplicatePersona(personaId: string) {
+    const source = personas.find((persona) => persona.id === personaId);
+    if (!source) return null;
+    const now = new Date().toISOString();
+    const duplicate: PersonaRecord = {
+      ...source,
+      id: createId("persona"),
+      name: `${source.name} · 副本`,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await savePersona(duplicate);
+    const nextPersonas = [duplicate, ...personas];
+    setPersonas(nextPersonas);
+    personaLibraryRef.current = nextPersonas;
+    await applyPersonaRecord(duplicate);
+    return duplicate;
+  }
+
+  async function deletePersonaProfile(personaId: string) {
+    if (personas.length <= 1) {
+      setRuntimeError("至少需要保留一个用户人设。");
+      return false;
+    }
+    const target = personas.find((persona) => persona.id === personaId);
+    if (!target) return false;
+    await removeStoredPersona(personaId);
+    const nextPersonas = personas.filter((persona) => persona.id !== personaId);
+    const fallback = nextPersonas[0];
+    const settings = await getSettings();
+    const cleanedAssignments = Object.fromEntries(
+      Object.entries(settings.personaAssignments ?? {}).filter(([, assignedPersonaId]) => assignedPersonaId !== personaId),
+    );
+    const nextActive = activePersonaId === personaId ? fallback : activePersona;
+    const nextAssignments = nextActive && conversation
+      ? { ...cleanedAssignments, [conversation.id]: nextActive.id }
+      : cleanedAssignments;
+    setPersonas(nextPersonas);
+    personaLibraryRef.current = nextPersonas;
+    setPersonaAssignments(nextAssignments);
+    if (nextActive) {
+      setActivePersonaId(nextActive.id);
+      contextResourcesRef.current.persona = nextActive;
+    }
+    await saveSettings({
+      ...settings,
+      activePersonaId: nextActive?.id,
+      personaAssignments: nextAssignments,
+      updatedAt: new Date().toISOString(),
+    });
+    if (activeCharacter) refreshContext(activeCharacter, messages);
+    return true;
   }
 
   async function applyPresetRecord(preset: PresetRecord | null) {
@@ -1307,6 +1451,7 @@ export function useLunemirRuntime() {
     activeLorebooks,
     personas,
     activePersona,
+    personaAssignments,
     presets,
     activePreset,
     conversations,
@@ -1354,6 +1499,9 @@ export function useLunemirRuntime() {
     deleteLorebookProfile,
     downloadLorebook,
     savePersonaProfile,
+    activatePersona,
+    duplicatePersona,
+    deletePersonaProfile,
     activatePreset,
     savePresetProfile,
     duplicatePreset,

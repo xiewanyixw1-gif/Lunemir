@@ -94,7 +94,18 @@ export function compileContext(
     character.systemPrompt,
   ].filter(Boolean).map(replaceMacros).join("\n\n");
   const personaDefinition = persona
-    ? `与您互动的用户人设是 ${persona.name}。\n${replaceMacros(persona.description)}`
+    ? [
+        `与您互动的用户人设是 ${persona.name}。`,
+        persona.description,
+        persona.identity && `身份：${persona.identity}`,
+        persona.occupation && `职业：${persona.occupation}`,
+        persona.appearance && `外貌：${persona.appearance}`,
+        persona.personality && `性格：${persona.personality}`,
+        persona.background && `背景：${persona.background}`,
+        persona.relationships && `人物关系：${persona.relationships}`,
+        persona.currentState && `当前状态：${persona.currentState}`,
+        persona.notes && `专属设定：${persona.notes}`,
+      ].filter(Boolean).map((value) => replaceMacros(value ?? "")).join("\n")
     : "";
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);

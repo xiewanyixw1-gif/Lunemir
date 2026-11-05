@@ -48,7 +48,7 @@ UI 不直接调用模型或数据库。所有数据读写通过应用服务完�
 每个对象都包含 `id`、`schemaVersion`、`createdAt` 与 `updatedAt`。
 
 - `Character`：标准字段、扩展字段、头像与来源格式；
-- `Persona`：用户身份和会话范围设置；
+- `Persona`：用户身份、头像、外貌、性格、背景、关系与当前状态；
 - `Lorebook`：条目、触发器、优先级和作用域；
 - `Preset`：提示词片段、插入顺序和生成参数；
 - `Conversation`：角色、用户人设、活动分支和场景状态；
@@ -105,7 +105,7 @@ domain repositories
 
 ## 7. 本地存储
 
-当前使用 IndexedDB v4 保存角色、多会话与剧情分支、章节点、长期记忆、结构化剧情事件、独立世界书、用户人设、提示词预设和低风险设置。`storyEvents` 按 `storyId` 建立索引；当前 Conversation ID 作为过渡 Story ID，后续迁移为独立 Story 表时保留映射。角色卡 PNG 暂以 Data URL 随角色记录保存，后续素材层会迁移为独立 Blob 记录，避免大头像重复占用结构化存储。
+当前使用 IndexedDB v4 保存角色、多会话与剧情分支、章节点、长期记忆、结构化剧情事件、独立世界书、用户人设、提示词预设和低风险设置。`storyEvents` 按 `storyId` 建立索引；当前 Conversation ID 作为过渡 Story ID，人设绑定也以该 ID 存入设置，后续迁移为独立 Story 表时保留映射。角色卡 PNG 与人设头像暂以 Data URL 随记录保存，后续素材层会迁移为独立 Blob 记录，避免大图片重复占用结构化存储。
 
 API 密钥默认仅存在于会话内存。用户选择持久保存时，使用 Web Crypto 加密；浏览器端加密无法完全抵抗同源脚本攻击，因此仍需严格控制依赖、内容安全策略和 XSS 风险。
 

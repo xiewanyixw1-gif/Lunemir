@@ -5,6 +5,7 @@ import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
+import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 
 type Section = "chat" | "characters" | "lore" | "themes" | "settings";
@@ -59,8 +60,6 @@ export function LunemirPrototype() {
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
   const [presetEditor, setPresetEditor] = useState<PresetEditorTarget | null>(null);
   const [draft, setDraft] = useState("");
-  const [personaName, setPersonaName] = useState("");
-  const [personaDescription, setPersonaDescription] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
   const messageListRef = useRef<HTMLDivElement | null>(null);
@@ -186,12 +185,6 @@ export function LunemirPrototype() {
     runtime.clearImport();
   }
 
-  function openPersonaEditor() {
-    setPersonaName(runtime.activePersona?.name ?? "旅行者");
-    setPersonaDescription(runtime.activePersona?.description ?? "");
-    setPersonaOpen(true);
-  }
-
   function beginMessageEdit(messageId: string, content: string) {
     setEditingMessageId(messageId);
     setEditingMessageText(content);
@@ -239,8 +232,8 @@ export function LunemirPrototype() {
             </button>
           ))}
         </nav>
-        <button className="profile-button" onClick={openPersonaEditor} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`}>
-          {(runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
+        <button className="profile-button" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined} onClick={() => setPersonaOpen(true)} aria-label={`用户人设：${runtime.activePersona?.name ?? "旅行者"}`}>
+          {runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0).toUpperCase()}
         </button>
       </aside>
 
@@ -474,7 +467,7 @@ export function LunemirPrototype() {
         <div className="token-ring" style={{ background: `conic-gradient(var(--accent) 0 ${tokenUsage}%, rgba(255,255,255,.06) ${tokenUsage}% 100%)` }}><span><strong>{runtime.contextReport?.estimatedTokens.toLocaleString() ?? 0}</strong><small>/ {runtime.contextReport?.limit.toLocaleString() ?? 0} tokens</small></span></div>
         <div className="context-block">
           <div className="block-title"><span>当前人设</span></div>
-          <article className="persona-card"><span>{(runtime.activePersona?.name ?? "Y").charAt(0)}</span><div><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>正在与 {activeName} 对话</small></div></article>
+          <article className="persona-card"><span style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0)}</span><div><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>正在与 {activeName} 对话</small></div></article>
         </div>
         <div className="context-block">
           <div className="block-title"><span>世界书命中</span><em>{runtime.contextReport?.matchedLore.length ?? 0}</em></div>
@@ -683,18 +676,16 @@ export function LunemirPrototype() {
       )}
 
       {personaOpen && (
-        <div className="modal-backdrop" role="presentation" onMouseDown={() => setPersonaOpen(false)}>
-          <section className="persona-modal glass-panel" role="dialog" aria-modal="true" aria-labelledby="persona-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button className="modal-close" onClick={() => setPersonaOpen(false)} aria-label="关闭">×</button>
-            <span className="modal-icon">◇</span>
-            <span className="eyebrow">USER PERSONA</span>
-            <h2 id="persona-title">你想以谁的身份进入故事？</h2>
-            <p>人设会作为上下文发送给模型，并在所有角色对话中使用。</p>
-            <label>显示名称<input value={personaName} onChange={(event) => setPersonaName(event.target.value)} maxLength={60} /></label>
-            <label>人设描述<textarea value={personaDescription} onChange={(event) => setPersonaDescription(event.target.value)} rows={6} placeholder="身份、性格、外貌，以及希望角色如何称呼你…" /></label>
-            <div className="modal-actions"><button className="primary-button" onClick={() => { void runtime.savePersonaProfile(personaName, personaDescription); setPersonaOpen(false); }}>保存人设</button></div>
-          </section>
-        </div>
+        <PersonaManagerModal
+          personas={runtime.personas}
+          activePersonaId={runtime.activePersona?.id ?? ""}
+          storyLabel={runtime.activeConversation?.title ?? "当前剧情"}
+          onClose={() => setPersonaOpen(false)}
+          onSave={runtime.savePersonaProfile}
+          onActivate={runtime.activatePersona}
+          onDuplicate={runtime.duplicatePersona}
+          onDelete={runtime.deletePersonaProfile}
+        />
       )}
     </main>
   );
