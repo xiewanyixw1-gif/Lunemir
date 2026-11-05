@@ -214,3 +214,45 @@ test("ships immersive mobile, greeting, worldbook, and preset fixes", async () =
   assert.match(styles, /overflow-x:hidden/);
   assert.match(styles, /data-has-background="true"/);
 });
+
+test("supports alternate opening selection and an immersive compact chat", async () => {
+  const [prototype, runtime, picker, editor, presetEditor, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("app/components/GreetingPickerModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/CharacterEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(runtime, /applyOpeningGreeting/);
+  assert.match(runtime, /canReplaceCurrentOpening/);
+  assert.match(picker, /选择.*的开场白/);
+  assert.match(picker, /以此新建会话/);
+  assert.match(editor, /alternateGreetings/);
+  assert.match(prototype, /message-tools/);
+  assert.doesNotMatch(prototype, /max="32000"/);
+  assert.doesNotMatch(presetEditor, /max="32000"/);
+  assert.match(styles, /greeting-picker/);
+  assert.match(styles, /data-glass-mode="messages"/);
+});
+
+test("renders preset theater output without executing imported markup", async () => {
+  const [renderer, component, editor, runtime, importer, prototype] = await Promise.all([
+    readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
+    readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
+    readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+  ]);
+  assert.match(renderer, /normalizeImportedOutputRenderer/);
+  assert.match(renderer, /likelyUnsafeRegex/);
+  assert.match(renderer, /script\|style\|iframe\|object\|embed/);
+  assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
+  assert.match(component, /theater-card/);
+  assert.match(editor, /小剧场与输出美化/);
+  assert.match(editor, /Regex 美化规则/);
+  assert.match(runtime, /lunemir_output_renderer/);
+  assert.match(importer, /normalizeImportedOutputRenderer/);
+  assert.match(prototype, /查看原文/);
+});

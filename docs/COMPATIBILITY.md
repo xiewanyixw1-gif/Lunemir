@@ -47,8 +47,10 @@ v0.2 支持：
 - 支持新建、编辑、复制、删除和导出聊天预设；
 - 提示词模块可单独启停、排序，并配置系统提示或历史后置位置与优先级；
 - Lunemir 导出使用 `lunemir_position` 保存模块插入位置，其他应用可以安全忽略该扩展字段；
+- 识别常见 `regex_scripts` / `regexScripts` 数组中的 AI 输出替换规则，并保留规则开关；
+- Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、小剧场主题和 Regex 配置；
 
-复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序，但尚不执行多预设组合和应用专属的高级标记模块。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场和受约束 Regex，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 
 ## 本地数据
 

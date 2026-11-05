@@ -2,8 +2,10 @@
 
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
+import { createOutputRegexRule, normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import { analyzePromptModules, createPromptModule } from "../../lib/lunemir/preset";
-import type { PresetEditorValues, PresetRecord, PromptModule } from "../../lib/lunemir/types";
+import type { OutputRegexRule, OutputRendererConfig, PresetEditorValues, PresetRecord, PromptModule } from "../../lib/lunemir/types";
+import { SafeMessageContent } from "./SafeMessageContent";
 
 type Props = {
   preset?: PresetRecord;
@@ -30,6 +32,8 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   const [temperature, setTemperature] = useState(preset?.modelPatch.temperature?.toString() ?? "");
   const [maxTokens, setMaxTokens] = useState(preset?.modelPatch.maxTokens?.toString() ?? "");
   const [contextLimit, setContextLimit] = useState(preset?.modelPatch.contextLimit?.toString() ?? "");
+  const [outputRenderer, setOutputRenderer] = useState(() => normalizeOutputRenderer(preset?.outputRenderer));
+  const [rendererPreview, setRendererPreview] = useState(":::theater 雨夜番外\n**Seren** 将信封推到灯下。\n\n> 有些秘密，只适合在故事之外说。\n:::");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const activeIndex = Math.max(0, modules.findIndex((module) => module.id === activeModuleId));
@@ -38,6 +42,31 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
 
   function updateModule(patch: Partial<PromptModule>) {
     setModules((current) => current.map((module) => module.id === activeModuleId ? { ...module, ...patch } : module));
+  }
+
+  function updateRenderer(patch: Partial<OutputRendererConfig>) {
+    setOutputRenderer((current) => ({ ...current, ...patch }));
+  }
+
+  function updateRegexRule(ruleId: string, patch: Partial<OutputRegexRule>) {
+    setOutputRenderer((current) => ({
+      ...current,
+      regexRules: current.regexRules.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule),
+    }));
+  }
+
+  function addRegexRule() {
+    setOutputRenderer((current) => ({
+      ...current,
+      regexRules: [...current.regexRules, createOutputRegexRule(current.regexRules.length)],
+    }));
+  }
+
+  function removeRegexRule(ruleId: string) {
+    setOutputRenderer((current) => ({
+      ...current,
+      regexRules: current.regexRules.filter((rule) => rule.id !== ruleId),
+    }));
   }
 
   function addModule() {
@@ -97,6 +126,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
           ...(maxTokens.trim() ? { maxTokens: Number(maxTokens) } : {}),
           ...(contextLimit.trim() ? { contextLimit: Number(contextLimit) } : {}),
         },
+        outputRenderer: normalizeOutputRenderer(outputRenderer),
       });
     } finally {
       setBusy(false);
@@ -125,8 +155,8 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
           <div className="preset-meta-grid">
             <label className="preset-name"><span>预设名称 *</span><input value={name} onChange={(event) => setName(event.target.value)} maxLength={120} required /></label>
             <label><span>Temperature</span><input type="number" min="0" max="2" step="0.1" value={temperature} onChange={(event) => setTemperature(event.target.value)} placeholder="不覆盖" /></label>
-            <label><span>最大输出 Tokens</span><input type="number" min="64" max="32000" step="64" value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} placeholder="不覆盖" /></label>
-            <label><span>上下文窗口</span><input type="number" min="1024" max="2000000" step="1024" value={contextLimit} onChange={(event) => setContextLimit(event.target.value)} placeholder="不覆盖" /></label>
+            <label><span>最大输出 Tokens</span><input type="number" min="1" step="1" value={maxTokens} onChange={(event) => setMaxTokens(event.target.value)} placeholder="不覆盖" /></label>
+            <label><span>上下文窗口</span><input type="number" min="1024" step="1" value={contextLimit} onChange={(event) => setContextLimit(event.target.value)} placeholder="不覆盖" /></label>
           </div>
 
           <div className="preset-editor-workspace">
@@ -159,6 +189,39 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
               </div>
             )}
           </div>
+
+          <details className="preset-renderer-settings" open>
+            <summary><span><strong>小剧场与输出美化</strong><small>安全渲染 Markdown、卡片和 Regex；不会执行脚本。</small></span><i>{outputRenderer.enabled ? "已启用" : "已关闭"}</i></summary>
+            <div className="preset-renderer-body">
+              <div className="renderer-options">
+                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.enabled} onChange={(event) => updateRenderer({ enabled: event.target.checked })} /><span><strong>启用输出美化</strong><small>关闭后聊天区始终显示模型原文。</small></span></label>
+                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.markdown} onChange={(event) => updateRenderer({ markdown: event.target.checked })} /><span><strong>Markdown 与安全 HTML 转换</strong><small>HTML 只转换为安全排版，不运行脚本和外链资源。</small></span></label>
+                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.theater} onChange={(event) => updateRenderer({ theater: event.target.checked })} /><span><strong>识别小剧场卡片</strong><small>支持 :::theater 或 ```theater 围栏。</small></span></label>
+                <label><span>小剧场样式</span><select value={outputRenderer.theaterTheme} onChange={(event) => updateRenderer({ theaterTheme: event.target.value as OutputRendererConfig["theaterTheme"] })}><option value="glass">月光毛玻璃</option><option value="minimal">极简旁白</option><option value="paper">信笺纸张</option></select></label>
+              </div>
+
+              <div className="renderer-rule-heading"><div><strong>Regex 美化规则</strong><small>按列表顺序处理 AI 原文；危险或无效表达式会自动跳过。</small></div><button type="button" onClick={addRegexRule}>＋ 添加规则</button></div>
+              <div className="renderer-rule-list">
+                {outputRenderer.regexRules.length === 0 ? <p className="renderer-empty">还没有 Regex 规则。普通 Markdown 和小剧场卡片仍然可用。</p> : outputRenderer.regexRules.map((rule, index) => (
+                  <article className="renderer-rule" key={rule.id}>
+                    <header><span>规则 {index + 1}</span><label><input type="checkbox" checked={rule.enabled} onChange={(event) => updateRegexRule(rule.id, { enabled: event.target.checked })} /> 启用</label><button className="danger" type="button" onClick={() => removeRegexRule(rule.id)}>删除</button></header>
+                    <div className="renderer-rule-grid">
+                      <label><span>名称</span><input value={rule.name} onChange={(event) => updateRegexRule(rule.id, { name: event.target.value })} /></label>
+                      <label><span>作用范围</span><select value={rule.scope} onChange={(event) => updateRegexRule(rule.id, { scope: event.target.value as OutputRegexRule["scope"] })}><option value="assistant">仅 AI 回复</option><option value="all">全部输出</option></select></label>
+                      <label className="wide"><span>查找表达式</span><input value={rule.pattern} onChange={(event) => updateRegexRule(rule.id, { pattern: event.target.value })} placeholder="例如：\\[小剧场\\]([\\s\\S]*?)\\[/小剧场\\]" spellCheck={false} /></label>
+                      <label><span>Flags</span><input value={rule.flags} onChange={(event) => updateRegexRule(rule.id, { flags: event.target.value })} placeholder="gimsu" spellCheck={false} /></label>
+                      <label className="wide"><span>替换内容</span><textarea value={rule.replacement} onChange={(event) => updateRegexRule(rule.id, { replacement: event.target.value })} rows={3} placeholder={":::theater 番外\n$1\n:::"} spellCheck={false} /></label>
+                    </div>
+                  </article>
+                ))}
+              </div>
+
+              <div className="renderer-preview-grid">
+                <label><span>实时预览原文</span><textarea value={rendererPreview} onChange={(event) => setRendererPreview(event.target.value)} rows={8} /></label>
+                <div><span>安全渲染结果</span><div className="renderer-preview"><SafeMessageContent source={rendererPreview} config={outputRenderer} showWarnings /></div></div>
+              </div>
+            </div>
+          </details>
 
           {warnings.length > 0 && <div className="preset-warnings"><strong>规则检查</strong>{warnings.map((warning) => <p key={warning}>{warning}</p>)}</div>}
           {error && <p className="character-editor-error" role="alert">{error}</p>}

@@ -21,6 +21,7 @@ function initialValues(character?: CharacterRecord): CharacterEditorValues {
     personality: character?.personality ?? "",
     scenario: character?.scenario ?? "",
     firstMessage: character?.firstMessage ?? "",
+    alternateGreetings: character?.alternateGreetings ?? [],
     exampleMessages: character?.exampleMessages ?? "",
     systemPrompt: character?.systemPrompt ?? "",
     postHistoryInstructions: character?.postHistoryInstructions ?? "",
@@ -35,6 +36,7 @@ function initialValues(character?: CharacterRecord): CharacterEditorValues {
 export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, onExport, onDelete }: Props) {
   const [values, setValues] = useState(() => initialValues(character));
   const [tags, setTags] = useState(values.tags.join("，"));
+  const [alternateGreetings, setAlternateGreetings] = useState(values.alternateGreetings.join("\n\n---\n\n"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
@@ -51,7 +53,14 @@ export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, 
     setBusy(true);
     setError("");
     try {
-      await onSave({ ...values, tags: tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean) });
+      await onSave({
+        ...values,
+        alternateGreetings: alternateGreetings
+          .split(/\r?\n\s*---+\s*\r?\n/)
+          .map((greeting) => greeting.trim())
+          .filter(Boolean),
+        tags: tags.split(/[，,]/).map((tag) => tag.trim()).filter(Boolean),
+      });
     } finally {
       setBusy(false);
     }
@@ -114,6 +123,7 @@ export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, 
             <label><span>性格与行为逻辑</span><textarea value={values.personality} onChange={(event) => update("personality", event.target.value)} rows={5} placeholder="性格、语言习惯、行为边界…" /></label>
             <label><span>当前剧情场景</span><textarea value={values.scenario} onChange={(event) => update("scenario", event.target.value)} rows={5} /></label>
             <label className="wide"><span>开场白</span><textarea value={values.firstMessage} onChange={(event) => update("firstMessage", event.target.value)} rows={5} /></label>
+            <label className="wide"><span>备选开场白</span><textarea value={alternateGreetings} onChange={(event) => setAlternateGreetings(event.target.value)} rows={8} placeholder="每条备选开场白之间使用单独一行 --- 分隔" /><small>导入角色卡中的 alternate_greetings 会显示在这里，也可以自行增删。</small></label>
             <label className="wide"><span>示例对话</span><textarea value={values.exampleMessages} onChange={(event) => update("exampleMessages", event.target.value)} rows={5} placeholder="{{char}}：…\n{{user}}：…" /></label>
           </div>
 

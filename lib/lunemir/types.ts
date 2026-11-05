@@ -52,6 +52,7 @@ export type CharacterEditorValues = Pick<CharacterRecord,
   | "personality"
   | "scenario"
   | "firstMessage"
+  | "alternateGreetings"
   | "exampleMessages"
   | "systemPrompt"
   | "postHistoryInstructions"
@@ -117,6 +118,24 @@ export type PromptModule = {
   order: number;
 };
 
+export type OutputRegexRule = {
+  id: string;
+  name: string;
+  pattern: string;
+  replacement: string;
+  flags: string;
+  enabled: boolean;
+  scope: "assistant" | "all";
+};
+
+export type OutputRendererConfig = {
+  enabled: boolean;
+  markdown: boolean;
+  theater: boolean;
+  theaterTheme: "glass" | "minimal" | "paper";
+  regexRules: OutputRegexRule[];
+};
+
 export type PresetRecord = {
   id: string;
   schemaVersion: 1;
@@ -126,6 +145,7 @@ export type PresetRecord = {
   postHistoryInstructions: string;
   modules?: PromptModule[];
   modelPatch: Partial<Pick<ModelConfig, "temperature" | "maxTokens" | "contextLimit">>;
+  outputRenderer?: OutputRendererConfig;
   raw: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -133,6 +153,7 @@ export type PresetRecord = {
 
 export type PresetEditorValues = Pick<PresetRecord, "name" | "modelPatch"> & {
   modules: PromptModule[];
+  outputRenderer: OutputRendererConfig;
 };
 
 export type StoredMessage = {

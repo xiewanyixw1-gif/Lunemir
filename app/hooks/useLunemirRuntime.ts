@@ -6,6 +6,7 @@ import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
 import { generateChatCompletion, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
+import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import { createStoryEvent, isDuplicatePhoneEvent, parsePhoneMessageProposal } from "../../lib/lunemir/story-events";
 import {
   createBackup,
@@ -49,12 +50,13 @@ import type {
   StoryEvent,
 } from "../../lib/lunemir/types";
 
-function initialMessage(character: CharacterRecord): StoredMessage[] {
-  if (!character.firstMessage.trim()) return [];
+function initialMessage(character: CharacterRecord, greeting = character.firstMessage): StoredMessage[] {
+  const content = greeting.trim();
+  if (!content) return [];
   return [{
     id: createId("message"),
     role: "assistant",
-    content: character.firstMessage,
+    content,
     createdAt: new Date().toISOString(),
     status: "complete",
   }];
@@ -524,6 +526,48 @@ export function useLunemirRuntime() {
     const character = activeCharacter;
     if (!character || streaming) return;
     const nextConversation = await createConversationRecord(character, { title: `新会话 · ${conversations.length + 1}` });
+    setConversations((current) => [nextConversation, ...current]);
+    await activateConversationRecord(nextConversation);
+  }
+
+  async function applyOpeningGreeting(greeting: string) {
+    const character = activeCharacter;
+    const content = greeting.trim();
+    if (!character || !content || streaming) return;
+    const availableGreetings = new Set(
+      [character.firstMessage, ...character.alternateGreetings]
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+    if (!availableGreetings.has(content)) {
+      setRuntimeError("这条开场白已不在当前角色卡中，请重新选择。");
+      return;
+    }
+
+    const openingMessages = initialMessage(character, content);
+    const canReplaceCurrentOpening = Boolean(conversation)
+      && messages.length <= 1
+      && !messages.some((message) => message.role === "user");
+
+    if (conversation && canReplaceCurrentOpening) {
+      const nextConversation: ConversationRecord = {
+        ...conversation,
+        title: content.slice(0, 28) || `与 ${character.name} 的对话`,
+        messages: openingMessages,
+        updatedAt: new Date().toISOString(),
+      };
+      setConversation(nextConversation);
+      setMessages(openingMessages);
+      setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+      await saveConversation(nextConversation);
+      refreshContext(character, openingMessages);
+      return;
+    }
+
+    const nextConversation = await createConversationRecord(character, {
+      title: content.slice(0, 28) || `与 ${character.name} 的对话`,
+      messages: openingMessages,
+    });
     setConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);
   }
@@ -1312,6 +1356,7 @@ export function useLunemirRuntime() {
           systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
           postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
           modelPatch: { ...values.modelPatch },
+          outputRenderer: normalizeOutputRenderer(values.outputRenderer),
           updatedAt: now,
         }
       : {
@@ -1323,6 +1368,7 @@ export function useLunemirRuntime() {
           systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
           postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
           modelPatch: { ...values.modelPatch },
+          outputRenderer: normalizeOutputRenderer(values.outputRenderer),
           raw: {},
           createdAt: now,
           updatedAt: now,
@@ -1344,6 +1390,7 @@ export function useLunemirRuntime() {
       sourceName: source.sourceName || source.name,
       modules: source.modules?.map((module, index) => ({ ...module, id: createId("prompt"), order: index })),
       modelPatch: { ...source.modelPatch },
+      outputRenderer: normalizeOutputRenderer(source.outputRenderer),
       raw: { ...source.raw },
       createdAt: now,
       updatedAt: now,
@@ -1389,6 +1436,7 @@ export function useLunemirRuntime() {
       ...(preset.modelPatch.temperature !== undefined ? { temperature: preset.modelPatch.temperature } : {}),
       ...(preset.modelPatch.maxTokens !== undefined ? { openai_max_tokens: preset.modelPatch.maxTokens } : {}),
       ...(preset.modelPatch.contextLimit !== undefined ? { openai_max_context: preset.modelPatch.contextLimit } : {}),
+      lunemir_output_renderer: normalizeOutputRenderer(preset.outputRenderer),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -1547,6 +1595,7 @@ export function useLunemirRuntime() {
     downloadCharacter,
     selectConversation,
     createNewConversation,
+    applyOpeningGreeting,
     branchConversation,
     renameConversation,
     deleteConversation,

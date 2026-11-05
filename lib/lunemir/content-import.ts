@@ -1,5 +1,6 @@
 import { normalizeCharacterCard, normalizeLorebookEntries, parseCharacterFile } from "./character-import";
 import { createId } from "./defaults";
+import { normalizeImportedOutputRenderer } from "./output-renderer";
 import type { ContentImportPreview, LorebookRecord, PresetRecord } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
@@ -109,6 +110,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     postHistoryInstructions,
     modules,
     modelPatch,
+    outputRenderer: normalizeImportedOutputRenderer(raw),
     raw,
     createdAt: now,
     updatedAt: now,

@@ -2,12 +2,15 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
+import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
+import { GreetingPickerModal } from "./GreetingPickerModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
 import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
+import { SafeMessageContent } from "./SafeMessageContent";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
@@ -58,12 +61,14 @@ export function LunemirPrototype() {
   const [conversationTitle, setConversationTitle] = useState("");
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [greetingPickerOpen, setGreetingPickerOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
   const [presetEditor, setPresetEditor] = useState<PresetEditorTarget | null>(null);
   const [draft, setDraft] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
+  const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
@@ -95,6 +100,15 @@ export function LunemirPrototype() {
   }
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
+  const greetingOptions = useMemo(
+    () => [...new Set([
+      runtime.activeCharacter?.firstMessage ?? "",
+      ...(runtime.activeCharacter?.alternateGreetings ?? []),
+    ].map((greeting) => greeting.trim()).filter(Boolean))],
+    [runtime.activeCharacter],
+  );
+  const currentOpeningGreeting = runtime.messages[0]?.role === "assistant" ? runtime.messages[0].content : "";
+  const greetingCreatesNewConversation = runtime.messages.length > 1 || runtime.messages.some((message) => message.role === "user");
   const tokenUsage = runtime.contextReport
     ? Math.min(100, Math.round(runtime.contextReport.estimatedTokens / runtime.contextReport.limit * 100))
     : 0;
@@ -135,6 +149,10 @@ export function LunemirPrototype() {
     ? runtime.presets.find((preset) => preset.id === presetEditor.id)
     : undefined;
   const activePresetId = runtime.activePreset?.id ?? "";
+  const activeOutputRenderer = useMemo(
+    () => runtime.activePreset ? normalizeOutputRenderer(runtime.activePreset.outputRenderer) : null,
+    [runtime.activePreset],
+  );
 
   useEffect(() => {
     if (section !== "chat" || !followOutputRef.current) return;
@@ -266,7 +284,7 @@ export function LunemirPrototype() {
             <span className="secure-state"><i /> IndexedDB 已就绪</span>
             {section === "chat" && <>
               <button className="icon-button" onClick={() => setSessionOpen(true)} aria-label="打开会话与记忆管理">≡</button>
-              <button className="icon-button" onClick={() => setImportOpen(true)} aria-label="导入角色卡、世界书或预设">＋</button>
+              {greetingOptions.length > 1 ? <button className="icon-button greeting-toggle" onClick={() => setGreetingPickerOpen(true)} aria-label={`选择 ${activeName} 的开场白`} title={`${greetingOptions.length} 条开场白`}>↻</button> : null}
               <button className="icon-button context-toggle" onClick={() => setContextOpen(!contextOpen)} aria-label="切换上下文面板">⌘</button>
             </>}
           </div>
@@ -301,15 +319,26 @@ export function LunemirPrototype() {
                       <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
                       <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
                     </div>
+                  ) : message.role === "assistant" && activeOutputRenderer?.enabled ? (
+                    <SafeMessageContent source={message.content} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
                   ) : <p>{message.content}</p>}
                   {!runtime.streaming && editingMessageId !== message.id && (
-                    <div className="message-actions">
-                      <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
-                      <button onClick={() => void runtime.branchConversation(message.id)}>从这里分支</button>
-                      <button onClick={() => void runtime.addMemoryCandidate(message.id)} disabled={(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id)}>{(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id) ? "已加入记忆" : "记住"}</button>
-                      <button className="danger-action" onClick={() => { if (window.confirm("删除这条消息？相关章节点与待确认记忆也会一并移除。")) void runtime.deleteMessage(message.id); }}>删除</button>
-                      {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
-                    </div>
+                    <details className="message-tools">
+                      <summary aria-label="打开消息操作">•••</summary>
+                      <div className="message-actions">
+                        {message.role === "assistant" && activeOutputRenderer?.enabled ? <button onClick={() => setRawMessageIds((current) => {
+                          const next = new Set(current);
+                          if (next.has(message.id)) next.delete(message.id);
+                          else next.add(message.id);
+                          return next;
+                        })}>{rawMessageIds.has(message.id) ? "查看美化" : "查看原文"}</button> : null}
+                        <button onClick={() => beginMessageEdit(message.id, message.content)}>编辑</button>
+                        <button onClick={() => void runtime.branchConversation(message.id)}>从这里分支</button>
+                        <button onClick={() => void runtime.addMemoryCandidate(message.id)} disabled={(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id)}>{(runtime.activeConversation?.memories ?? []).some((memory) => memory.sourceMessageId === message.id) ? "已加入记忆" : "记住"}</button>
+                        <button className="danger-action" onClick={() => { if (window.confirm("删除这条消息？相关章节点与待确认记忆也会一并移除。")) void runtime.deleteMessage(message.id); }}>删除</button>
+                        {message.role === "assistant" && index === runtime.messages.length - 1 && <><button onClick={() => void runtime.continueLastReply()}>继续生成</button><button onClick={() => void runtime.regenerateLastReply()}>重新生成</button></>}
+                      </div>
+                    </details>
                   )}
                   {(message.alternatives?.length ?? 0) > 1 && editingMessageId !== message.id && (
                     <div className="message-versions" aria-label="回复版本切换">
@@ -496,8 +525,8 @@ export function LunemirPrototype() {
               <label>API Key<input type="password" value={runtime.apiKey} onChange={(event) => runtime.setApiKey(event.target.value)} placeholder="仅保留到本页面关闭" autoComplete="off" /></label>
               <label>模型 ID<input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
               <label>温度<input type="number" min="0" max="2" step="0.1" value={runtime.modelConfig.temperature} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, temperature: Number(event.target.value) })} /></label>
-              <label>最大输出 Tokens<input type="number" min="64" max="32000" step="64" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /></label>
-              <label>上下文窗口<input type="number" min="1024" max="2000000" step="1024" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /></label>
+              <label>最大输出 Tokens<input type="number" min="1" step="1" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /><small>不再硬编码上限，请按当前模型允许的值填写。</small></label>
+              <label>上下文窗口<input type="number" min="1024" step="1" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /><small>填写模型实际上下文长度，例如 65535 或 128000。</small></label>
               <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
             </div>
             <div className="data-card">
@@ -636,6 +665,16 @@ export function LunemirPrototype() {
           </section>
         </div>
       )}
+
+      {greetingPickerOpen && runtime.activeCharacter && greetingOptions.length > 0 ? (
+        <GreetingPickerModal
+          character={runtime.activeCharacter}
+          currentGreeting={currentOpeningGreeting}
+          createsNewConversation={greetingCreatesNewConversation}
+          onClose={() => setGreetingPickerOpen(false)}
+          onApply={runtime.applyOpeningGreeting}
+        />
+      ) : null}
 
       {characterEditor && (
         <CharacterEditorModal
