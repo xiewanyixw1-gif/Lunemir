@@ -31,6 +31,23 @@ test("keeps every workspace page behind one immersive navigation drawer", async 
   assert.match(styles, /\.navigation-backdrop\.is-open/);
 });
 
+test("ships searchable libraries with non-duplicated management menus", async () => {
+  const [prototype, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+
+  assert.match(prototype, /LibrarySearch/);
+  assert.match(prototype, /LibraryActionMenu/);
+  assert.match(prototype, /filteredCharacters/);
+  assert.match(prototype, /filteredLorebooks/);
+  assert.match(prototype, /filteredPresets/);
+  assert.doesNotMatch(prototype, /className="character-manage"/);
+  assert.doesNotMatch(prototype, />打开编辑</);
+  assert.match(styles, /\.library-action-menu/);
+  assert.match(styles, /\.character-editor-actions\{position:sticky/);
+});
+
 test("includes product and architecture documentation", async () => {
   await Promise.all([
     access(new URL("docs/PRODUCT_REQUIREMENTS.md", root)),

@@ -61,6 +61,43 @@ function messageDayLabel(value: string) {
   return sameDay ? "今天" : date.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
 }
 
+type LibraryAction = {
+  label: string;
+  onSelect: () => void | Promise<void>;
+  danger?: boolean;
+};
+
+function LibraryActionMenu({ label, actions }: { label: string; actions: LibraryAction[] }) {
+  return (
+    <details className="library-action-menu">
+      <summary aria-label={label}>•••</summary>
+      <div>
+        {actions.map((action) => (
+          <button
+            className={action.danger ? "danger" : ""}
+            type="button"
+            key={action.label}
+            onClick={(event) => {
+              event.currentTarget.closest("details")?.removeAttribute("open");
+              void action.onSelect();
+            }}
+          >{action.label}</button>
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function LibrarySearch({ label, value, count, onChange }: { label: string; value: string; count: number; onChange: (value: string) => void }) {
+  return (
+    <label className="library-search">
+      <span aria-hidden="true">⌕</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={label} aria-label={label} />
+      <small>{count}</small>
+    </label>
+  );
+}
+
 export function LunemirPrototype() {
   const runtime = useLunemirRuntime();
   const [section, setSection] = useState<Section>("chat");
@@ -81,6 +118,9 @@ export function LunemirPrototype() {
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
   const [presetEditor, setPresetEditor] = useState<PresetEditorTarget | null>(null);
+  const [characterQuery, setCharacterQuery] = useState("");
+  const [loreQuery, setLoreQuery] = useState("");
+  const [presetQuery, setPresetQuery] = useState("");
   const [draft, setDraft] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
@@ -192,6 +232,34 @@ export function LunemirPrototype() {
     () => runtime.activePreset ? normalizeOutputRenderer(runtime.activePreset.outputRenderer) : null,
     [runtime.activePreset],
   );
+  const filteredCharacters = useMemo(() => {
+    const query = characterQuery.trim().toLocaleLowerCase();
+    if (!query) return runtime.characters;
+    return runtime.characters.filter((character) => [
+      character.name,
+      character.nickname,
+      character.creator,
+      character.description,
+      character.scenario,
+      character.tags.join(" "),
+    ].join(" ").toLocaleLowerCase().includes(query));
+  }, [characterQuery, runtime.characters]);
+  const embeddedLorebooks = useMemo(() => runtime.characters.filter((character) => character.lorebookEntries.length > 0), [runtime.characters]);
+  const filteredEmbeddedLorebooks = useMemo(() => {
+    const query = loreQuery.trim().toLocaleLowerCase();
+    if (!query) return embeddedLorebooks;
+    return embeddedLorebooks.filter((character) => [character.name, character.lorebookName, ...character.lorebookEntries.flatMap((entry) => [entry.name, entry.content, ...entry.keys])].join(" ").toLocaleLowerCase().includes(query));
+  }, [embeddedLorebooks, loreQuery]);
+  const filteredLorebooks = useMemo(() => {
+    const query = loreQuery.trim().toLocaleLowerCase();
+    if (!query) return runtime.lorebooks;
+    return runtime.lorebooks.filter((book) => [book.name, book.sourceName, ...book.entries.flatMap((entry) => [entry.name, entry.content, ...entry.keys])].join(" ").toLocaleLowerCase().includes(query));
+  }, [loreQuery, runtime.lorebooks]);
+  const filteredPresets = useMemo(() => {
+    const query = presetQuery.trim().toLocaleLowerCase();
+    if (!query) return runtime.presets;
+    return runtime.presets.filter((preset) => [preset.name, preset.sourceName, ...(preset.modules ?? []).flatMap((module) => [module.name, module.content])].join(" ").toLocaleLowerCase().includes(query));
+  }, [presetQuery, runtime.presets]);
 
   useEffect(() => {
     if (!navigationOpen) return;
@@ -513,23 +581,27 @@ export function LunemirPrototype() {
         {section === "characters" && (
           <div className="content-view">
             <div className="view-heading">
-              <div><span className="eyebrow">CHARACTER LIBRARY</span><h2>与你产生联系的人</h2></div>
-              <button className="primary-button" onClick={() => setCharacterEditor({ mode: "create" })}>新建角色</button>
+              <div><span className="eyebrow">CHARACTER LIBRARY</span><h2>与你产生联系的人</h2><p className="view-description">选择角色即可进入其独立剧情；编辑、复制、导出和删除收在卡片的更多菜单中。</p></div>
+              <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入角色卡</button><button className="primary-button" onClick={() => setCharacterEditor({ mode: "create" })}>新建角色</button></div>
             </div>
+            <div className="library-toolbar"><LibrarySearch label="搜索角色、标签或剧情" value={characterQuery} count={filteredCharacters.length} onChange={setCharacterQuery} /></div>
             <div className="character-grid">
-              {runtime.characters.map((character, index) => (
+              {filteredCharacters.map((character, index) => (
                 <article className="character-card-shell" key={character.id}>
                   <button className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
                     <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
-                    <span className="character-card-copy"><strong>{character.name}</strong><small>{character.creator || character.tags.slice(0, 2).join(" · ") || character.sourceFormat}</small><p>{character.scenario || character.description || "暂未填写角色设定"}</p></span>
-                    <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地`}</em>
+                    <span className="character-card-copy"><strong>{character.name}</strong><p>{character.scenario || character.description || "暂未填写角色设定"}</p><small>{character.tags.slice(0, 3).join(" · ") || character.creator || character.sourceFormat}</small></span>
+                    <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地保存`}</em>
                   </button>
-                  <button className="character-manage" onClick={() => setCharacterEditor({ mode: "edit", id: character.id })}>管理</button>
+                  <LibraryActionMenu label={`管理 ${character.name}`} actions={[
+                    { label: "编辑角色", onSelect: () => setCharacterEditor({ mode: "edit", id: character.id }) },
+                    { label: "复制角色", onSelect: async () => { const duplicate = await runtime.duplicateCharacter(character.id); if (duplicate) setCharacterEditor({ mode: "edit", id: duplicate.id }); } },
+                    { label: "导出 V2 JSON", onSelect: () => runtime.downloadCharacter(character.id) },
+                    { label: "删除角色", danger: true, onSelect: async () => { if (window.confirm(`删除角色“${character.name}”及其全部会话、手机事件和记忆？此操作无法撤销。`)) await runtime.deleteCharacterProfile(character.id); } },
+                  ]} />
                 </article>
               ))}
-              <button className="character-card empty" onClick={() => setImportOpen(true)}>
-                <span className="card-orb">＋</span><span><strong>导入新角色</strong><small>PNG / JSON</small></span><em>不会覆盖已有角色</em>
-              </button>
+              {filteredCharacters.length === 0 ? <div className="empty-state library-empty"><span>⌕</span><strong>没有找到角色</strong><p>换一个名称、标签或剧情关键词试试。</p></div> : null}
             </div>
           </div>
         )}
@@ -540,9 +612,10 @@ export function LunemirPrototype() {
               <div><span className="eyebrow">WORLD INFO LIBRARY</span><h2>世界书库</h2><p className="view-description">所有角色卡内嵌世界书与独立世界书都集中在这里。为当前角色启用的独立世界书才会进入上下文。</p></div>
               <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入 JSON</button><button className="primary-button" onClick={() => setLorebookEditor({ mode: "create" })}>新建世界书</button></div>
             </div>
+            <div className="library-toolbar"><LibrarySearch label="搜索世界书、条目或关键词" value={loreQuery} count={filteredEmbeddedLorebooks.length + filteredLorebooks.length} onChange={setLoreQuery} /></div>
             <div className="lore-list">
-              {runtime.characters.some((character) => character.lorebookEntries.length > 0) ? <span className="lore-section-label">角色卡内嵌 · 随对应角色自动使用</span> : null}
-              {runtime.characters.filter((character) => character.lorebookEntries.length > 0).map((character, index) => (
+              {filteredEmbeddedLorebooks.length > 0 ? <span className="lore-section-label">角色卡内嵌 · 随对应角色自动使用</span> : null}
+              {filteredEmbeddedLorebooks.map((character, index) => (
                 <article className={runtime.activeCharacter?.id === character.id ? "lore-row embedded is-enabled" : "lore-row embedded"} key={character.id}>
                   <span className="lore-color" style={{ background: ["#a990ff", "#69dcff", "#ff90c7"][index % 3] }} />
                   <button className="lore-open" onClick={() => setLorebookEditor({ mode: "embedded", characterId: character.id })}>
@@ -550,11 +623,13 @@ export function LunemirPrototype() {
                     <small>{character.name} · {character.lorebookEntries.filter((entry) => entry.enabled).length}/{character.lorebookEntries.length} 个条目启用</small>
                   </button>
                   <span className="lore-binding-state">{runtime.activeCharacter?.id === character.id ? "当前角色使用中" : "随角色切换"}</span>
-                  <button className="lore-manage" onClick={() => setLorebookEditor({ mode: "embedded", characterId: character.id })}>打开编辑</button>
+                  <LibraryActionMenu label={`管理 ${character.lorebookName || `${character.name} 内嵌世界书`}`} actions={[
+                    { label: "编辑条目", onSelect: () => setLorebookEditor({ mode: "embedded", characterId: character.id }) },
+                  ]} />
                 </article>
               ))}
-              {runtime.lorebooks.length > 0 ? <span className="lore-section-label">独立世界书 · 为当前角色 {activeName} 单独启停</span> : null}
-              {runtime.lorebooks.map((book, index) => {
+              {filteredLorebooks.length > 0 ? <span className="lore-section-label">独立世界书 · 为当前角色 {activeName} 单独启停</span> : null}
+              {filteredLorebooks.map((book, index) => {
                 const enabled = runtime.activeLorebooks.some((item) => item.id === book.id);
                 const assignedCharacters = runtime.characters.filter((character) => (runtime.lorebookAssignments[character.id] ?? []).includes(book.id));
                 return (
@@ -562,11 +637,19 @@ export function LunemirPrototype() {
                     <span className="lore-color" style={{ background: ["#69dcff", "#a990ff", "#ff90c7"][index % 3] }} />
                     <button className="lore-open" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}><strong>{book.name}</strong><small>{book.entries.filter((entry) => entry.enabled).length}/{book.entries.length} 个条目启用 · 已绑定 {assignedCharacters.length} 个角色</small></button>
                     <span className="lore-binding-state">{assignedCharacters.map((character) => character.name).join("、") || "尚未绑定角色"}</span>
-                    <div className="lore-actions"><button className="lore-manage" onClick={() => setLorebookEditor({ mode: "edit", id: book.id })}>打开编辑</button><button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? `对 ${activeName} 已启用` : `为 ${activeName} 启用`}</button></div>
+                    <div className="lore-actions">
+                      <button className="lore-toggle" onClick={() => void runtime.toggleLorebookAssignment(book.id)}>{enabled ? `${activeName} 已启用` : `为 ${activeName} 启用`}</button>
+                      <LibraryActionMenu label={`管理 ${book.name}`} actions={[
+                        { label: "编辑世界书", onSelect: () => setLorebookEditor({ mode: "edit", id: book.id }) },
+                        { label: "复制世界书", onSelect: async () => { const duplicate = await runtime.duplicateLorebook(book.id); if (duplicate) setLorebookEditor({ mode: "edit", id: duplicate.id }); } },
+                        { label: "导出 JSON", onSelect: () => runtime.downloadLorebook(book.id) },
+                        { label: "删除世界书", danger: true, onSelect: async () => { if (window.confirm(`删除世界书“${book.name}”？它会同时从所有角色的启用列表中移除。`)) await runtime.deleteLorebookProfile(book.id); } },
+                      ]} />
+                    </div>
                   </article>
                 );
               })}
-              {!runtime.characters.some((character) => character.lorebookEntries.length > 0) && runtime.lorebooks.length === 0 ? <div className="empty-state"><span>⌑</span><strong>还没有世界书</strong><p>导入 World Info JSON 后会进入世界书库，并默认为当前角色启用。</p></div> : null}
+              {filteredEmbeddedLorebooks.length === 0 && filteredLorebooks.length === 0 ? <div className="empty-state library-empty"><span>{loreQuery ? "⌕" : "⌑"}</span><strong>{loreQuery ? "没有匹配的世界书" : "还没有世界书"}</strong><p>{loreQuery ? "换一个世界书名称、条目或关键词试试。" : "导入 World Info JSON 后会进入世界书库，并默认为当前角色启用。"}</p></div> : null}
             </div>
           </div>
         )}
@@ -577,25 +660,54 @@ export function LunemirPrototype() {
               <div><span className="eyebrow">PROMPT PRESET LIBRARY</span><h2>提示词预设</h2><p className="view-description">预设控制写作方式、角色行为、叙事规则和生成参数。当前只启用一个预设，不会覆盖库中的其他预设。</p></div>
               <div className="view-heading-actions"><button onClick={() => setImportOpen(true)}>导入 JSON</button><button className="primary-button" onClick={() => setPresetEditor({ mode: "create" })}>新建预设</button></div>
             </div>
+            <div className="library-toolbar"><LibrarySearch label="搜索预设或提示词模块" value={presetQuery} count={filteredPresets.length} onChange={setPresetQuery} /></div>
+            <span className="library-section-label">当前预设</span>
             <div className="preset-library-grid">
-              <article className={!activePresetId ? "preset-library-card is-active" : "preset-library-card"}>
-                <span className="preset-library-glyph">○</span>
-                <div><strong>不使用预设</strong><p>只使用角色卡、人设、世界书和当前对话。</p><small>{!activePresetId ? "当前正在使用" : "基础上下文"}</small></div>
-                <button onClick={() => void runtime.activatePreset("")} disabled={!activePresetId}>{!activePresetId ? "已启用" : "使用"}</button>
-              </article>
-              {runtime.presets.map((preset) => {
+              {runtime.activePreset ? (() => {
+                const preset = runtime.activePreset;
                 const enabledModules = Array.isArray(preset.modules) ? preset.modules.filter((module) => module.enabled).length : [preset.systemPrompt, preset.postHistoryInstructions].filter(Boolean).length;
                 const totalModules = Array.isArray(preset.modules) ? preset.modules.length : enabledModules;
-                const isActive = activePresetId === preset.id;
                 return (
-                  <article className={isActive ? "preset-library-card is-active" : "preset-library-card"} key={preset.id}>
+                  <article className="preset-library-card preset-current-card is-active" key={preset.id}>
                     <span className="preset-library-glyph">≋</span>
-                    <button className="preset-library-open" onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}><strong>{preset.name}</strong><p>{enabledModules}/{totalModules} 个模块启用 · {preset.sourceName}</p><small>{isActive ? "当前正在影响生成" : Object.keys(preset.modelPatch).length ? `${Object.keys(preset.modelPatch).length} 个模型参数` : "仅提示词规则"}</small></button>
-                    <div><button onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}>编辑</button><button className={isActive ? "is-applied" : ""} onClick={() => void runtime.activatePreset(preset.id)}>{isActive ? "已启用" : "使用"}</button></div>
+                    <button className="preset-library-open" onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}><strong>{preset.name}</strong><p>{enabledModules}/{totalModules} 个模块启用 · {preset.sourceName}</p><small>当前正在影响生成</small></button>
+                    <div className="preset-card-controls"><button className="is-applied" disabled>已启用</button><LibraryActionMenu label={`管理 ${preset.name}`} actions={[
+                      { label: "编辑预设", onSelect: () => setPresetEditor({ mode: "edit", id: preset.id }) },
+                      { label: "复制预设", onSelect: async () => { const duplicate = await runtime.duplicatePreset(preset.id); if (duplicate) setPresetEditor({ mode: "edit", id: duplicate.id }); } },
+                      { label: "导出 JSON", onSelect: () => runtime.downloadPreset(preset.id) },
+                      { label: "停用预设", onSelect: () => runtime.activatePreset("") },
+                      { label: "删除预设", danger: true, onSelect: async () => { if (window.confirm(`删除预设“${preset.name}”？此操作不会删除角色或聊天记录。`)) await runtime.deletePresetProfile(preset.id); } },
+                    ]} /></div>
+                  </article>
+                );
+              })() : (
+                <article className="preset-library-card preset-current-card is-active">
+                  <span className="preset-library-glyph">○</span>
+                  <div><strong>基础上下文</strong><p>只使用角色卡、人设、世界书和当前对话。</p><small>当前未启用额外预设</small></div>
+                  <button className="is-applied" disabled>已启用</button>
+                </article>
+              )}
+            </div>
+            {filteredPresets.some((preset) => preset.id !== activePresetId) ? <span className="library-section-label">其他预设</span> : null}
+            <div className="preset-library-grid">
+              {filteredPresets.filter((preset) => preset.id !== activePresetId).map((preset) => {
+                const enabledModules = Array.isArray(preset.modules) ? preset.modules.filter((module) => module.enabled).length : [preset.systemPrompt, preset.postHistoryInstructions].filter(Boolean).length;
+                const totalModules = Array.isArray(preset.modules) ? preset.modules.length : enabledModules;
+                return (
+                  <article className="preset-library-card" key={preset.id}>
+                    <span className="preset-library-glyph">≋</span>
+                    <button className="preset-library-open" onClick={() => setPresetEditor({ mode: "edit", id: preset.id })}><strong>{preset.name}</strong><p>{enabledModules}/{totalModules} 个模块启用 · {preset.sourceName}</p><small>{Object.keys(preset.modelPatch).length ? `${Object.keys(preset.modelPatch).length} 个模型参数` : "仅提示词规则"}</small></button>
+                    <div className="preset-card-controls"><button onClick={() => void runtime.activatePreset(preset.id)}>使用</button><LibraryActionMenu label={`管理 ${preset.name}`} actions={[
+                      { label: "编辑预设", onSelect: () => setPresetEditor({ mode: "edit", id: preset.id }) },
+                      { label: "复制预设", onSelect: async () => { const duplicate = await runtime.duplicatePreset(preset.id); if (duplicate) setPresetEditor({ mode: "edit", id: duplicate.id }); } },
+                      { label: "导出 JSON", onSelect: () => runtime.downloadPreset(preset.id) },
+                      { label: "删除预设", danger: true, onSelect: async () => { if (window.confirm(`删除预设“${preset.name}”？此操作不会删除角色或聊天记录。`)) await runtime.deletePresetProfile(preset.id); } },
+                    ]} /></div>
                   </article>
                 );
               })}
-              {runtime.presets.length === 0 ? <div className="empty-state"><span>≋</span><strong>还没有提示词预设</strong><p>导入常见聊天预设 JSON，或从空白模块开始创建。</p></div> : null}
+              {runtime.presets.length === 0 ? <div className="empty-state library-empty"><span>≋</span><strong>还没有提示词预设</strong><p>导入常见聊天预设 JSON，或从空白模块开始创建。</p></div> : null}
+              {runtime.presets.length > 0 && filteredPresets.length === 0 ? <div className="empty-state library-empty"><span>⌕</span><strong>没有匹配的预设</strong><p>换一个预设名称或提示词内容试试。</p></div> : null}
             </div>
           </div>
         )}
