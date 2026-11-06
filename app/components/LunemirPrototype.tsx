@@ -293,6 +293,17 @@ export function LunemirPrototype() {
     () => runtime.storyEvents.filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent")),
     [runtime.storyEvents],
   );
+  const phoneWidth = 350 * runtime.appearance.phoneScale / 100;
+  const phoneHeight = 720 * runtime.appearance.phoneScale / 100;
+  const phoneShellStyle: CSSProperties = {
+    width: `${phoneWidth}px`,
+    minWidth: `${phoneWidth}px`,
+    maxWidth: `${phoneWidth}px`,
+    height: `${phoneHeight}px`,
+    minHeight: `${phoneHeight}px`,
+    maxHeight: `${phoneHeight}px`,
+    ...(phonePanelPosition ? { left: phonePanelPosition.x, top: phonePanelPosition.y, right: "auto", bottom: "auto" } : {}),
+  };
 
   useEffect(() => {
     if (!navigationOpen) return;
@@ -847,7 +858,7 @@ export function LunemirPrototype() {
 
       <section
         className={`${phoneOpen ? "phone-shell is-open" : "phone-shell"}${draggingPhone === "panel" ? " is-dragging" : ""}`}
-        style={phonePanelPosition ? { left: phonePanelPosition.x, top: phonePanelPosition.y, right: "auto", bottom: "auto" } : undefined}
+        style={phoneShellStyle}
         aria-label="Lunemir 悬浮小手机"
         aria-hidden={!phoneOpen}
       >

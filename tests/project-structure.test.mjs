@@ -450,10 +450,14 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
   assert.match(styles, /width:var\(--lm-phone-width,287px\);height:var\(--lm-phone-height,590px\)/);
   assert.doesNotMatch(styles, /\.phone-shell\{inset:0!important;width:100%!important;height:100dvh!important/);
   assert.match(prototype, /"--lm-phone-width"/);
+  assert.match(prototype, /const phoneShellStyle: CSSProperties/);
+  assert.match(prototype, /minWidth: `\$\{phoneWidth\}px`/);
+  assert.match(prototype, /maxHeight: `\$\{phoneHeight\}px`/);
   assert.match(prototype, /<div className="phone-wallpaper" \/>/);
   assert.doesNotMatch(prototype, /className="phone-wallpaper"\s+style=/);
   assert.match(types, /phoneScale: number/);
   assert.match(defaults, /phoneScale: 82/);
   assert.match(runtime, /phoneScale: clamp/);
   assert.match(prototype, /恢复默认大小/);
+  assert.match(styles, /contain:layout size style/);
 });
