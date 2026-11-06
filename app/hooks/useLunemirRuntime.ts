@@ -77,7 +77,7 @@ async function createConversationRecord(
     id: createId("conversation"),
     schemaVersion: 1,
     characterId: character.id,
-    title: options.title || replaceRoleMacros(character.firstMessage, character.name, options.personaName).slice(0, 28) || `与 ${character.name} 的对话`,
+    title: options.title || `与 ${character.nickname || character.name} 的故事`,
     messages: options.messages ?? initialMessage(character),
     parentConversationId: options.parentConversationId,
     branchedFromMessageId: options.branchedFromMessageId,
@@ -270,6 +270,14 @@ export function useLunemirRuntime() {
     const fallbackPersona = personaLibraryRef.current.find((persona) => persona.id === settings.activePersonaId) ?? personaLibraryRef.current[0];
     let characterConversations = (await listConversations(character.id))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    const legacyGreetingTitle = replaceRoleMacros(character.firstMessage, character.name, fallbackPersona?.name).slice(0, 28);
+    const defaultStoryTitle = `与 ${character.nickname || character.name} 的故事`;
+    characterConversations = await Promise.all(characterConversations.map(async (item) => {
+      if (item.title !== legacyGreetingTitle && item.title !== "新的故事") return item;
+      const migrated = { ...item, title: defaultStoryTitle };
+      await saveConversation(migrated);
+      return migrated;
+    }));
     if (characterConversations.length === 0) {
       characterConversations = [await createConversationRecord(character, { personaName: fallbackPersona?.name })];
     }
@@ -282,7 +290,7 @@ export function useLunemirRuntime() {
     ) {
       nextConversation = {
         ...nextConversation,
-        title: nextConversation.title === "新的故事" ? replaceRoleMacros(character.firstMessage, character.name, fallbackPersona?.name).slice(0, 28) : nextConversation.title,
+        title: nextConversation.title === "新的故事" ? defaultStoryTitle : nextConversation.title,
         messages: initialMessage(character),
         updatedAt: new Date().toISOString(),
       };
@@ -350,15 +358,20 @@ export function useLunemirRuntime() {
       getSettings(),
     ]);
     let storedCharacters = await Promise.all(storedCharacterRecords.map(async (character) => {
-      if (character.firstMessage.trim()) return character;
-      const recovered = readCharacterGreetings(character.raw);
-      if (!recovered.firstMessage) return character;
-      const repaired: CharacterRecord = {
+      let repaired: CharacterRecord = {
         ...character,
-        firstMessage: recovered.firstMessage,
-        alternateGreetings: character.alternateGreetings.length > 0 ? character.alternateGreetings : recovered.alternateGreetings,
-        updatedAt: new Date().toISOString(),
+        signature: typeof character.signature === "string" ? character.signature : "",
       };
+      const recovered = readCharacterGreetings(character.raw);
+      if (!repaired.firstMessage.trim() && recovered.firstMessage) {
+        repaired = {
+          ...repaired,
+          firstMessage: recovered.firstMessage,
+          alternateGreetings: repaired.alternateGreetings.length > 0 ? repaired.alternateGreetings : recovered.alternateGreetings,
+        };
+      }
+      if (repaired.signature === character.signature && repaired.firstMessage === character.firstMessage) return character;
+      repaired.updatedAt = new Date().toISOString();
       await saveCharacter(repaired);
       return repaired;
     }));
@@ -493,6 +506,7 @@ export function useLunemirRuntime() {
       ...values,
       name: values.name.trim(),
       nickname: values.nickname.trim(),
+      signature: values.signature.trim(),
       tags: values.tags.map((tag) => tag.trim()).filter(Boolean),
       creator: values.creator.trim(),
       characterVersion: values.characterVersion.trim() || "1.0",
@@ -621,6 +635,7 @@ export function useLunemirRuntime() {
           ...character.extensions,
           lunemir: {
             ...lunemirExtensions,
+            signature: character.signature,
             ...(character.avatarDataUrl ? { avatar_data_url: character.avatarDataUrl } : {}),
           },
         },

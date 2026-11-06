@@ -185,6 +185,20 @@ test("supports persistent character card management", async () => {
   assert.match(runtime, /downloadCharacter/);
   assert.match(storage, /deleteCharacter/);
   assert.match(importer, /avatar_data_url/);
+  assert.match(editor, /values\.signature/);
+  assert.match(runtime, /signature: values\.signature\.trim\(\)/);
+  assert.match(importer, /lunemirExtensions\.signature/);
+});
+
+test("keeps character signatures separate from greetings and phone status", async () => {
+  const [prototype, runtime] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+  ]);
+  assert.match(prototype, /activeSignature/);
+  assert.match(prototype, /runtime\.storyState\?\.location \|\| "地点未设定"/);
+  assert.match(runtime, /`与 \$\{character\.nickname \|\| character\.name\} 的故事`/);
+  assert.doesNotMatch(runtime, /title: options\.title \|\| replaceRoleMacros\(character\.firstMessage/);
 });
 
 test("supports persistent visual lorebook management", async () => {

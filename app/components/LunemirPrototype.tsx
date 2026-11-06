@@ -184,6 +184,7 @@ export function LunemirPrototype() {
   }
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
+  const activeSignature = runtime.activeCharacter?.signature?.trim() ?? "";
   const activeConversationTitle = replaceRoleMacros(runtime.activeConversation?.title ?? "当前剧情", activeName, runtime.activePersona?.name ?? "用户");
   const phoneStoryTime = runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? "1970-01-01T00:00:00.000Z";
   const greetingOptions = useMemo(
@@ -531,7 +532,7 @@ export function LunemirPrototype() {
       <GlassPanel as="aside" className={navigationOpen ? "navigation-drawer is-open" : "navigation-drawer"} aria-label="Lunemir 主菜单" aria-hidden={!navigationOpen}>
         <div className="navigation-drawer-heading">
           <CharacterOrb avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} />
-          <div><span className="eyebrow">CURRENT STORY</span><strong>{activeName}</strong><small>{activeConversationTitle}</small></div>
+          <div><span className="eyebrow">CURRENT STORY</span><strong>{activeName}</strong>{activeSignature ? <small>{activeSignature}</small> : null}</div>
           <button type="button" onClick={() => setNavigationOpen(false)} aria-label="关闭主菜单" tabIndex={navigationOpen ? 0 : -1}>×</button>
         </div>
         <nav className="navigation-drawer-list" aria-label="功能页面">
@@ -570,7 +571,7 @@ export function LunemirPrototype() {
             </button>
             {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
             <div>
-              <p>{section === "chat" ? activeConversationTitle : "LUNEMIR"}</p>
+              <p>{section === "chat" ? activeSignature || "CURRENT STORY" : "LUNEMIR"}</p>
               <h1>{section === "chat" ? activeName : pageTitle}</h1>
             </div>
           </div>
@@ -949,7 +950,7 @@ export function LunemirPrototype() {
               <em>Lunemir Phone</em>
               <small>{new Date(phoneStoryTime).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</small>
               <strong>{new Date(phoneStoryTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</strong>
-              <span>{runtime.storyState?.weather || "Lunemir 世界线"} · {runtime.storyState?.location || activeConversationTitle}</span>
+              <span>{runtime.storyState?.weather || "Lunemir 世界线"} · {runtime.storyState?.location || "地点未设定"}</span>
             </header>
             <div className="phone-app-grid">
               {phoneApps.map((app) => <button type="button" key={app.id} onClick={() => openPhoneApp(app.id)}>

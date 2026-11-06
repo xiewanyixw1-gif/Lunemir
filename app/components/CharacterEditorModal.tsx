@@ -17,6 +17,7 @@ function initialValues(character?: CharacterRecord): CharacterEditorValues {
   return {
     name: character?.name ?? "",
     nickname: character?.nickname ?? "",
+    signature: character?.signature ?? "",
     description: character?.description ?? "",
     personality: character?.personality ?? "",
     scenario: character?.scenario ?? "",
@@ -112,6 +113,7 @@ export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, 
             <div className="character-editor-grid compact">
               <label><span>角色名称 *</span><input value={values.name} onChange={(event) => update("name", event.target.value)} maxLength={100} required /></label>
               <label><span>昵称</span><input value={values.nickname} onChange={(event) => update("nickname", event.target.value)} maxLength={100} /></label>
+              <label className="wide"><span>个性签名</span><input value={values.signature} onChange={(event) => update("signature", event.target.value)} maxLength={120} placeholder="显示在聊天顶部和侧边故事信息中" /><small>仅用于界面展示，不会替代角色开场白。</small></label>
               <label><span>创作者</span><input value={values.creator} onChange={(event) => update("creator", event.target.value)} maxLength={100} /></label>
               <label><span>版本</span><input value={values.characterVersion} onChange={(event) => update("characterVersion", event.target.value)} maxLength={40} /></label>
               <label className="wide"><span>标签</span><input value={tags} onChange={(event) => setTags(event.target.value)} placeholder="奇幻，现代，慢热" /></label>

@@ -122,6 +122,7 @@ export function normalizeCharacterCard(
     sourceName,
     name,
     nickname: asString(data.nickname),
+    signature: firstText(lunemirExtensions.signature, data.signature),
     description: asString(data.description),
     personality: asString(data.personality),
     scenario: asString(data.scenario),

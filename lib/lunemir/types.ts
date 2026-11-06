@@ -29,6 +29,7 @@ export type CharacterRecord = {
   sourceName: string;
   name: string;
   nickname: string;
+  signature: string;
   description: string;
   personality: string;
   scenario: string;
@@ -53,6 +54,7 @@ export type CharacterRecord = {
 export type CharacterEditorValues = Pick<CharacterRecord,
   | "name"
   | "nickname"
+  | "signature"
   | "description"
   | "personality"
   | "scenario"
