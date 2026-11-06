@@ -445,6 +445,23 @@ test("resolves persona macros and supports portrait-above-text appearance", asyn
   assert.match(styles, /bottom:calc\(100% \+ 5px\)/);
 });
 
+test("renders the main story as a semantic immersive reading surface", async () => {
+  const [prototype, readingHeader, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/StoryReadingHeader.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(prototype, /aria-label="主剧情阅读区"/);
+  assert.match(prototype, /role="log"/);
+  assert.match(prototype, /<header className="message-meta">/);
+  assert.match(prototype, /aria-describedby="composer-shortcut-hint"/);
+  assert.match(readingHeader, /CURRENT CHAPTER/);
+  assert.match(readingHeader, /当前剧情状态/);
+  assert.match(readingHeader, /dateTime={storyTime}/);
+  assert.match(styles, /\.story-reading-header/);
+  assert.match(styles, /text-wrap:balance/);
+});
+
 test("ships a resizable iOS-inspired phone shell with real story-linked apps", async () => {
   const [prototype, styles, types, defaults, runtime] = await Promise.all([
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),

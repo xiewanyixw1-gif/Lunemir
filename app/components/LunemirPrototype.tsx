@@ -16,6 +16,7 @@ import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 import { SafeMessageContent } from "./SafeMessageContent";
 import { StoryGuidanceModal } from "./StoryGuidanceModal";
+import { StoryReadingHeader } from "./StoryReadingHeader";
 import { StoryTimelineModal } from "./StoryTimelineModal";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
@@ -147,7 +148,7 @@ export function LunemirPrototype() {
   const [editingMessageText, setEditingMessageText] = useState("");
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
-  const messageListRef = useRef<HTMLDivElement | null>(null);
+  const messageListRef = useRef<HTMLElement | null>(null);
   const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const phoneDragRef = useRef<{
@@ -593,10 +594,11 @@ export function LunemirPrototype() {
         </header>
 
         {section === "chat" && (
-          <div className="chat-stage">
-            <div
+          <section className="chat-stage" aria-label="主剧情阅读区">
+            <section
               className="message-list"
-              aria-live="polite"
+              aria-labelledby="story-reading-title"
+              tabIndex={0}
               ref={messageListRef}
               onScroll={(event) => {
                 const target = event.currentTarget;
@@ -605,8 +607,16 @@ export function LunemirPrototype() {
                 setShowJumpToLatest(!nearLatest);
               }}
             >
-              {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
-              {runtime.messages.map((message, index) => {
+              <StoryReadingHeader
+                title={activeConversationTitle}
+                scene={replaceRoleMacros(runtime.storyState?.scene || runtime.activeCharacter?.scenario || "", activeName, runtime.activePersona?.name ?? "用户")}
+                storyState={runtime.storyState}
+                fallbackTime={phoneStoryTime}
+                onOpenTimeline={() => setStoryTimelineOpen(true)}
+              />
+              <div className="message-log" role="log" aria-label="剧情消息" aria-live="polite" aria-relevant="additions text">
+                {runtime.messages.length === 0 && <section className="empty-chat" aria-label="空故事"><span aria-hidden="true">◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></section>}
+                {runtime.messages.map((message, index) => {
                 const isUser = message.role === "user";
                 const speakerName = isUser ? runtime.activePersona?.name ?? "You" : activeName;
                 const showAvatar = isUser ? runtime.appearance.showUserAvatar : runtime.appearance.showCharacterAvatar;
@@ -617,23 +627,23 @@ export function LunemirPrototype() {
                 const showDay = !previousMessage || messageDayLabel(previousMessage.createdAt) !== messageDayLabel(message.createdAt);
                 return (
                   <Fragment key={message.id}>
-                    {showDay ? <div className="date-divider"><span>{messageDayLabel(message.createdAt)}</span></div> : null}
+                    {showDay ? <div className="date-divider" role="separator" aria-label={messageDayLabel(message.createdAt)}><time dateTime={message.createdAt}>{messageDayLabel(message.createdAt)}</time></div> : null}
                     {message.status === "streaming" && !message.content ? (
-                      <div className="message-row character-row typing-row">
+                      <div className="message-row character-row typing-row" role="status">
                         {runtime.appearance.showCharacterAvatar ? <MessageAvatar image={runtime.activeCharacter?.avatarDataUrl} name={activeName} side="character" /> : null}
                         <div className="typing-bubble" aria-label={`${activeName} 正在输入`}><i /><i /><i /></div>
                       </div>
                     ) : (
                       <div className={isUser ? "message-row user-row" : "message-row character-row"}>
                         {!isUser && showAvatar ? <MessageAvatar image={avatar} name={speakerName} side="character" /> : null}
-                        <article className={isUser ? "message user-message" : "message character-message"}>
-                          <div className="message-meta">
+                        <article className={isUser ? "message user-message" : "message character-message"} aria-label={`${speakerName}的消息`}>
+                          <header className="message-meta">
                             {showName ? <strong>{speakerName}</strong> : null}
-                            {runtime.appearance.showTimestamp ? <time>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> : null}
+                            {runtime.appearance.showTimestamp ? <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> : null}
                             {message.editedAt && <em>已编辑</em>}
                             {message.status === "stopped" && <em>已停止</em>}
                             {message.status === "error" && <em>失败</em>}
-                          </div>
+                          </header>
                           {editingMessageId === message.id ? (
                             <div className="message-editor">
                               <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
@@ -677,15 +687,17 @@ export function LunemirPrototype() {
                     )}
                   </Fragment>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            </section>
 
             {showJumpToLatest ? <button className="jump-to-latest" type="button" onClick={scrollToLatest}>回到最新消息 ↓</button> : null}
 
-            <form className="composer" onSubmit={sendMessage}>
+            <form className="composer" onSubmit={sendMessage} aria-label="发送剧情消息">
               <label className="composer-field">
                 <span className="sr-only">输入消息</span>
                 <textarea
+                  name="message"
                   value={draft}
                   onChange={(event) => {
                     setDraft(event.target.value);
@@ -699,9 +711,12 @@ export function LunemirPrototype() {
                     }
                   }}
                   placeholder="写下你想说的话…"
+                  autoComplete="off"
+                  enterKeyHint="send"
+                  aria-describedby="composer-shortcut-hint"
                   rows={1}
                 />
-                <span>Enter 发送 · Shift + Enter 换行</span>
+                <span id="composer-shortcut-hint">Enter 发送 · Shift + Enter 换行</span>
               </label>
               <button
                 className={runtime.streaming ? "send-button is-stopping" : "send-button"}
@@ -711,7 +726,7 @@ export function LunemirPrototype() {
                 aria-label={runtime.streaming ? "停止生成" : "发送消息"}
               >{runtime.streaming ? "■" : "↗"}</button>
             </form>
-          </div>
+          </section>
         )}
 
         {section === "characters" && (
