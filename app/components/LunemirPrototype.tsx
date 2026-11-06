@@ -7,6 +7,7 @@ import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
 import { ChatAppearancePanel } from "./ChatAppearancePanel";
+import { ContextInspectorModal } from "./ContextInspectorModal";
 import { GlassPanel } from "./GlassPanel";
 import { GreetingPickerModal } from "./GreetingPickerModal";
 import { LorebookEditorModal } from "./LorebookEditorModal";
@@ -115,6 +116,7 @@ export function LunemirPrototype() {
   const [sessionQuery, setSessionQuery] = useState("");
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
+  const [contextInspectorOpen, setContextInspectorOpen] = useState(false);
   const [greetingPickerOpen, setGreetingPickerOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
@@ -763,14 +765,15 @@ export function LunemirPrototype() {
       {section === "chat" && <GlassPanel as="aside" className={contextOpen ? "context-panel is-open" : "context-panel"}>
         <div className="context-heading"><div><span className="eyebrow">CONTEXT</span><h2>真实上下文预估</h2></div><button onClick={() => setContextOpen(false)} aria-label="关闭上下文">×</button></div>
         <div className="token-ring" style={{ background: `conic-gradient(var(--accent) 0 ${tokenUsage}%, rgba(255,255,255,.06) ${tokenUsage}% 100%)` }}><span><strong>{runtime.contextReport?.estimatedTokens.toLocaleString() ?? 0}</strong><small>/ {runtime.contextReport?.limit.toLocaleString() ?? 0} tokens</small></span></div>
+        <button className="context-inspector-open" type="button" onClick={() => setContextInspectorOpen(true)} disabled={!runtime.contextReport}><span><strong>检查本轮提示词</strong><small>查看模型实际收到的完整顺序</small></span><i aria-hidden="true">›</i></button>
         <div className="context-block">
           <div className="block-title"><span>当前人设</span></div>
           <article className="persona-card"><span style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "Y").charAt(0)}</span><div><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>正在与 {activeName} 对话</small></div></article>
         </div>
         <div className="context-block">
-          <div className="block-title"><span>世界书命中</span><em>{runtime.contextReport?.matchedLore.length ?? 0}</em></div>
+          <div className="block-title"><span>世界书命中</span><em>{runtime.contextReport ? `${runtime.contextReport.loreStats.matched}/${runtime.contextReport.loreStats.enabled}` : "0/0"}</em></div>
           {(runtime.contextReport?.matchedLore ?? []).map((match, index) => <article className="context-item" key={match.entry.id}><i className={["cyan", "violet", "rose"][index % 3]} /><span><strong>{match.entry.name}</strong><small>{match.reason}</small></span><b>P{match.entry.priority}</b></article>)}
-          {(runtime.contextReport?.matchedLore.length ?? 0) === 0 && <p className="context-empty">当前消息没有触发世界书条目。</p>}
+          {(runtime.contextReport?.matchedLore.length ?? 0) === 0 && <p className="context-empty">已扫描 {runtime.contextReport?.loreStats.total ?? 0} 个条目，当前对话没有触发内容。</p>}
         </div>
         <div className="context-block memory-block">
           <div className="block-title"><span>上下文组成</span><em>实时</em></div>
@@ -897,6 +900,14 @@ export function LunemirPrototype() {
           </section>
         </div>
       )}
+
+      {contextInspectorOpen && runtime.contextReport ? (
+        <ContextInspectorModal
+          report={runtime.contextReport}
+          presetName={runtime.activePreset?.name}
+          onClose={() => setContextInspectorOpen(false)}
+        />
+      ) : null}
 
       {greetingPickerOpen && runtime.activeCharacter && greetingOptions.length > 0 ? (
         <GreetingPickerModal

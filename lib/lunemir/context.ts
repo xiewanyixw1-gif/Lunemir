@@ -26,12 +26,17 @@ export function estimateTokens(text: string) {
 }
 
 export function resolvePresetPrompts(preset?: PresetRecord | null) {
-  if (!preset) return { systemPrompt: "", postHistoryInstructions: "", activeModuleCount: 0 };
+  if (!preset) return { systemPrompt: "", postHistoryInstructions: "", activeModuleCount: 0, activeModules: [] };
   if (!Array.isArray(preset.modules)) {
+    const activeModules = [
+      ...(preset.systemPrompt.trim() ? [{ id: "legacy-system", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, priority: 100, order: 0 }] : []),
+      ...(preset.postHistoryInstructions.trim() ? [{ id: "legacy-post-history", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, priority: 100, order: 1 }] : []),
+    ];
     return {
       systemPrompt: preset.systemPrompt,
       postHistoryInstructions: preset.postHistoryInstructions,
-      activeModuleCount: [preset.systemPrompt, preset.postHistoryInstructions].filter(Boolean).length,
+      activeModuleCount: activeModules.length,
+      activeModules,
     };
   }
   const activeModules = preset.modules
@@ -41,6 +46,7 @@ export function resolvePresetPrompts(preset?: PresetRecord | null) {
     systemPrompt: activeModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
     postHistoryInstructions: activeModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
     activeModuleCount: activeModules.length,
+    activeModules,
   };
 }
 
@@ -174,6 +180,19 @@ export function compileContext(
     ...(postHistory ? [{ role: "system" as const, content: postHistory }] : []),
   ];
   const estimatedTokens = modelMessages.reduce((total, message) => total + estimateTokens(message.content), 0);
+  const promptMessages = modelMessages.map((message, index) => ({
+    id: `${message.role}-${index}`,
+    role: message.role,
+    label: index === 0
+      ? "系统上下文"
+      : postHistory && index === modelMessages.length - 1
+        ? "历史后置指令"
+        : message.role === "assistant"
+          ? `${character.name} 的回复`
+          : `${persona?.name ?? "用户"} 的消息`,
+    content: message.content,
+    estimatedTokens: estimateTokens(message.content),
+  }));
   const usage = estimatedTokens / Math.max(1, contextLimit);
   const warnings = usage > 0.9
     ? ["上下文接近模型上限，较早消息可能需要摘要。"]
@@ -189,6 +208,19 @@ export function compileContext(
       health: Math.max(8, Math.round(100 - usage * 100)),
       segments,
       matchedLore,
+      loreStats: {
+        total: allLoreEntries.length,
+        enabled: allLoreEntries.filter((entry) => entry.enabled).length,
+        matched: matchedLore.length,
+      },
+      presetModules: resolvedPreset.activeModules.map((module) => ({
+        id: module.id,
+        name: module.name,
+        position: module.position,
+        priority: module.priority,
+        estimatedTokens: estimateTokens(replaceMacros(module.content)),
+      })),
+      promptMessages,
       warnings,
     },
   };

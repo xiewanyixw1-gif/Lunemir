@@ -325,3 +325,22 @@ test("keeps personas, story archives, and model settings useful on small screens
   assert.match(styles, /settings-field-grid\.three/);
   assert.match(styles, /persona-library-list>button\{flex:0 0 168px/);
 });
+
+test("inspects the exact prompt, active preset modules, and lore matches", async () => {
+  const [context, types, inspector, prototype, styles] = await Promise.all([
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("app/components/ContextInspectorModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(context, /promptMessages/);
+  assert.match(context, /activeModules/);
+  assert.match(context, /loreStats/);
+  assert.match(types, /ContextPromptMessage/);
+  assert.match(inspector, /复制完整上下文/);
+  assert.match(inspector, /最终发送顺序/);
+  assert.doesNotMatch(inspector, /dangerouslySetInnerHTML/);
+  assert.match(prototype, /contextInspectorOpen/);
+  assert.match(styles, /context-inspector-grid/);
+});

@@ -312,6 +312,22 @@ export type ContextSegment = {
   estimatedTokens: number;
 };
 
+export type ContextPromptMessage = {
+  id: string;
+  role: "system" | Role;
+  label: string;
+  content: string;
+  estimatedTokens: number;
+};
+
+export type ContextPresetModule = {
+  id: string;
+  name: string;
+  position: PromptModule["position"];
+  priority: number;
+  estimatedTokens: number;
+};
+
 export type MatchedLore = {
   entry: LorebookEntry;
   reason: string;
@@ -323,6 +339,13 @@ export type ContextReport = {
   health: number;
   segments: ContextSegment[];
   matchedLore: MatchedLore[];
+  loreStats: {
+    total: number;
+    enabled: number;
+    matched: number;
+  };
+  presetModules: ContextPresetModule[];
+  promptMessages: ContextPromptMessage[];
   warnings: string[];
 };
 
