@@ -217,6 +217,7 @@ export function LunemirPrototype() {
     "--lm-paragraph-spacing": `${runtime.appearance.paragraphSpacing}px`,
     "--lm-chat-max-width": `${runtime.appearance.messageMaxWidth}px`,
     "--lm-mobile-reading-inset": `${runtime.appearance.mobileReadingInset}px`,
+    "--lm-phone-height": `${720 * runtime.appearance.phoneScale / 100}px`,
   } as CSSProperties;
   const activeBackground = runtime.appearance.backgroundMode === "custom"
     ? runtime.appearance.backgroundImage
@@ -949,6 +950,11 @@ export function LunemirPrototype() {
                   <button type="button" onClick={() => openMainSectionFromPhone("presets")}><span><i className="blue">≋</i>对话预设</span><b>{runtime.activePreset?.name || "未选择"} ›</b></button>
                   <button type="button" onClick={() => openMainSectionFromPhone("settings")}><span><i className="gray">⌁</i>模型与 API</span><b>{runtime.modelConfig.model || "未配置"} ›</b></button>
                 </div>
+                <section className="phone-size-setting">
+                  <span><strong>手机尺寸</strong><small>保持手机比例，只改变悬浮窗口大小</small></span>
+                  <div><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.max(65, runtime.appearance.phoneScale - 5) })} aria-label="缩小手机">−</button><b>{runtime.appearance.phoneScale}%</b><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.min(110, runtime.appearance.phoneScale + 5) })} aria-label="放大手机">＋</button></div>
+                  <button className="phone-size-reset" type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: 82 })}>恢复默认大小</button>
+                </section>
                 <div className="phone-setting-group"><button type="button" onClick={() => setPhoneApp("story")}><span><i className="gold">◷</i>剧情状态</span><b>›</b></button><button type="button" onClick={() => setPhoneApp("contacts")}><span><i className="green">人</i>角色与人设</span><b>›</b></button></div>
                 <p className="phone-privacy-note">角色、剧情、预设和手机记录默认保存在当前设备。API Key 不会显示在手机桌面。</p>
               </div> : null}

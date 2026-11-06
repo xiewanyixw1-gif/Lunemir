@@ -161,6 +161,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     paragraphSpacing: clamp(value?.paragraphSpacing, 0, 32, DEFAULT_APPEARANCE.paragraphSpacing),
     messageMaxWidth: clamp(value?.messageMaxWidth, 520, 1080, DEFAULT_APPEARANCE.messageMaxWidth),
     mobileReadingInset: clamp(value?.mobileReadingInset, 4, 40, DEFAULT_APPEARANCE.mobileReadingInset),
+    phoneScale: clamp(value?.phoneScale, 65, 110, DEFAULT_APPEARANCE.phoneScale),
   };
 }
 

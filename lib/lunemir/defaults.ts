@@ -47,6 +47,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   paragraphSpacing: 14,
   messageMaxWidth: 860,
   mobileReadingInset: 14,
+  phoneScale: 82,
 };
 
 export function createId(prefix: string) {

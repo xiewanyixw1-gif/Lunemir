@@ -430,10 +430,13 @@ test("resolves persona macros and supports portrait-above-text appearance", asyn
   assert.match(styles, /bottom:calc\(100% \+ 5px\)/);
 });
 
-test("ships an iOS-inspired phone shell with real story-linked apps", async () => {
-  const [prototype, styles] = await Promise.all([
+test("ships a resizable iOS-inspired phone shell with real story-linked apps", async () => {
+  const [prototype, styles, types, defaults, runtime] = await Promise.all([
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/defaults.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
   ]);
   assert.match(prototype, /type PhoneApp = "home" \| "messages" \| "contacts" \| "story" \| "notes" \| "studio" \| "settings"/);
   assert.match(prototype, /主剧情和手机共用同一条时间线/);
@@ -443,5 +446,10 @@ test("ships an iOS-inspired phone shell with real story-linked apps", async () =
   assert.match(prototype, /不会用假图片冒充生成结果/);
   assert.match(styles, /Lunemir Phone OS/);
   assert.match(styles, /phone-conversation-list/);
-  assert.match(styles, /\.phone-shell\{inset:0!important;width:100%!important;height:100dvh!important/);
+  assert.match(styles, /aspect-ratio:350\/720/);
+  assert.doesNotMatch(styles, /\.phone-shell\{inset:0!important;width:100%!important;height:100dvh!important/);
+  assert.match(types, /phoneScale: number/);
+  assert.match(defaults, /phoneScale: 82/);
+  assert.match(runtime, /phoneScale: clamp/);
+  assert.match(prototype, /恢复默认大小/);
 });

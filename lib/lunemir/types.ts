@@ -305,6 +305,7 @@ export type AppearanceSettings = {
   paragraphSpacing: number;
   messageMaxWidth: number;
   mobileReadingInset: number;
+  phoneScale: number;
 };
 
 export type PersistedSettings = {
