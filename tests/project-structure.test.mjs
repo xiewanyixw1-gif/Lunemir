@@ -87,10 +87,11 @@ test("links committed phone events with the main story context", async () => {
   assert.match(storage, /saveStoryEvent/);
   assert.match(runtime, /requestPhoneEvent/);
   assert.match(runtime, /sendPhoneMessage/);
+  assert.match(runtime, /sendPhoneMessageToStory/);
   assert.match(runtime, /markPhoneEventsRead/);
   assert.match(context, /已确认的手机通信事件/);
   assert.match(prototype, /检查新消息/);
-  assert.match(prototype, /回复.*activeName/);
+  assert.match(prototype, /回复.*phoneActiveName/);
 });
 
 test("supports real character cards and compatible streaming", async () => {
@@ -440,7 +441,7 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
   ]);
   assert.match(prototype, /type PhoneApp = "home" \| "messages" \| "contacts" \| "story" \| "notes" \| "studio" \| "settings"/);
   assert.match(prototype, /主剧情和手机共用同一条时间线/);
-  assert.match(prototype, /runtime\.sendPhoneMessage/);
+  assert.match(prototype, /runtime\.sendPhoneMessageToStory/);
   assert.match(prototype, /runtime\.activatePreset/);
   assert.match(prototype, /生图工作室/);
   assert.match(prototype, /不会用假图片冒充生成结果/);
@@ -453,9 +454,12 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
   assert.match(prototype, /const phoneShellStyle: CSSProperties/);
   assert.match(prototype, /minWidth: `\$\{phoneWidth\}px`/);
   assert.match(prototype, /maxHeight: `\$\{phoneHeight\}px`/);
-  assert.match(prototype, /<div className="phone-wallpaper" \/>/);
-  assert.doesNotMatch(prototype, /className="phone-wallpaper"\s+style=/);
+  assert.match(prototype, /className="phone-wallpaper" style=\{phoneWallpaperStyle\}/);
+  assert.match(prototype, /runtime\.allConversations/);
+  assert.match(prototype, /runtime\.allStoryEvents/);
+  assert.match(prototype, /搜索联系人或消息/);
   assert.match(types, /phoneScale: number/);
+  assert.match(types, /phoneWallpaper:/);
   assert.match(defaults, /phoneScale: 82/);
   assert.match(runtime, /phoneScale: clamp/);
   assert.match(prototype, /恢复默认大小/);

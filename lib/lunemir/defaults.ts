@@ -48,6 +48,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   messageMaxWidth: 860,
   mobileReadingInset: 14,
   phoneScale: 82,
+  phoneWallpaper: "moon",
 };
 
 export function createId(prefix: string) {

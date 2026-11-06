@@ -18,6 +18,8 @@ import {
   deletePreset as removeStoredPreset,
   deleteStoryEvents,
   getSettings,
+  listAllConversations,
+  listAllStoryEvents,
   listCharacters,
   listConversations,
   listLorebooks,
@@ -111,6 +113,11 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
   );
   const glassBlur = clamp(value?.glassBlur ?? value?.blur, 0, 40, DEFAULT_APPEARANCE.glassBlur);
   const glassOpacity = clamp(value?.glassOpacity ?? value?.opacity, 0, 100, DEFAULT_APPEARANCE.glassOpacity);
+  const normalizePosition = (position?: { x: number; y: number }) => (
+    position && Number.isFinite(position.x) && Number.isFinite(position.y)
+      ? { x: Math.max(0, position.x), y: Math.max(0, position.y) }
+      : undefined
+  );
   return {
     theme,
     blur: glassBlur,
@@ -162,6 +169,14 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     messageMaxWidth: clamp(value?.messageMaxWidth, 520, 1080, DEFAULT_APPEARANCE.messageMaxWidth),
     mobileReadingInset: clamp(value?.mobileReadingInset, 4, 40, DEFAULT_APPEARANCE.mobileReadingInset),
     phoneScale: clamp(value?.phoneScale, 65, 100, DEFAULT_APPEARANCE.phoneScale),
+    phoneWallpaper: value?.phoneWallpaper === "aurora" || value?.phoneWallpaper === "rose" || value?.phoneWallpaper === "custom"
+      ? value.phoneWallpaper
+      : DEFAULT_APPEARANCE.phoneWallpaper,
+    phoneWallpaperImage: typeof value?.phoneWallpaperImage === "string" && value.phoneWallpaperImage.startsWith("data:image/")
+      ? value.phoneWallpaperImage
+      : undefined,
+    phoneButtonPosition: normalizePosition(value?.phoneButtonPosition),
+    phonePanelPosition: normalizePosition(value?.phonePanelPosition),
   };
 }
 
@@ -177,9 +192,11 @@ export function useLunemirRuntime() {
   const [personaAssignments, setPersonaAssignments] = useState<Record<string, string>>({});
   const [lorebookAssignments, setLorebookAssignments] = useState<Record<string, string[]>>({});
   const [conversations, setConversations] = useState<ConversationRecord[]>([]);
+  const [allConversations, setAllConversations] = useState<ConversationRecord[]>([]);
   const [conversation, setConversation] = useState<ConversationRecord | null>(null);
   const [messages, setMessages] = useState<StoredMessage[]>([]);
   const [storyEvents, setStoryEvents] = useState<StoryEvent[]>([]);
+  const [allStoryEvents, setAllStoryEvents] = useState<StoryEvent[]>([]);
   const [phoneEventStatus, setPhoneEventStatus] = useState<"idle" | "checking" | "linked" | "cooldown" | "skipped" | "error">("idle");
   const [phoneEventMessage, setPhoneEventMessage] = useState("");
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
@@ -286,9 +303,17 @@ export function useLunemirRuntime() {
       ?? null;
     const nextStoryEvents = await listStoryEvents(nextConversation.id);
     setConversations(characterConversations);
+    setAllConversations((items) => [
+      ...items.filter((item) => item.characterId !== character.id),
+      ...characterConversations,
+    ]);
     setConversation(nextConversation);
     setMessages(nextConversation.messages);
     setStoryEvents(nextStoryEvents);
+    setAllStoryEvents((items) => [
+      ...items.filter((item) => item.storyId !== nextConversation.id),
+      ...nextStoryEvents,
+    ].sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt)));
     setPhoneEventStatus("idle");
     setPhoneEventMessage("");
     storyEventsRef.current = nextStoryEvents;
@@ -382,6 +407,9 @@ export function useLunemirRuntime() {
       await saveSettings({ ...settings, activePersonaId: selectedPersona.id, updatedAt: new Date().toISOString() });
     }
     await selectCharacter(selected);
+    const [storedConversations, storedStoryEvents] = await Promise.all([listAllConversations(), listAllStoryEvents()]);
+    setAllConversations(storedConversations);
+    setAllStoryEvents(storedStoryEvents);
     setReady(true);
   }, [selectCharacter]);
 
@@ -400,6 +428,7 @@ export function useLunemirRuntime() {
     const nextConversation = { ...conversation, messages: nextMessages, updatedAt: new Date().toISOString() };
     setConversation(nextConversation);
     setConversations((current) => current.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    setAllConversations((current) => current.map((item) => item.id === nextConversation.id ? nextConversation : item));
     await saveConversation(nextConversation);
   }
 
@@ -417,9 +446,14 @@ export function useLunemirRuntime() {
       ?? null;
     setConversation(normalizedConversation);
     setConversations((items) => items.map((item) => item.id === normalizedConversation.id ? normalizedConversation : item));
+    setAllConversations((items) => [normalizedConversation, ...items.filter((item) => item.id !== normalizedConversation.id)]);
     setMessages(normalizedConversation.messages);
     const nextStoryEvents = await listStoryEvents(normalizedConversation.id);
     setStoryEvents(nextStoryEvents);
+    setAllStoryEvents((items) => [
+      ...items.filter((item) => item.storyId !== normalizedConversation.id),
+      ...nextStoryEvents,
+    ].sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt)));
     setPhoneEventStatus("idle");
     setPhoneEventMessage("");
     storyEventsRef.current = nextStoryEvents;
@@ -538,10 +572,12 @@ export function useLunemirRuntime() {
     await removeStoredCharacter(characterId);
     const remaining = characters.filter((character) => character.id !== characterId);
     setCharacters(remaining);
+    const removedStoryIds = new Set(targetConversations.map((item) => item.id));
+    setAllConversations((items) => items.filter((item) => item.characterId !== characterId));
+    setAllStoryEvents((items) => items.filter((item) => !removedStoryIds.has(item.storyId)));
     const settings = await getSettings();
     const activeConversationIds = { ...(settings.activeConversationIds ?? {}) };
     delete activeConversationIds[characterId];
-    const removedStoryIds = new Set(targetConversations.map((item) => item.id));
     const nextPersonaAssignments = Object.fromEntries(
       Object.entries(settings.personaAssignments ?? {}).filter(([storyId]) => !removedStoryIds.has(storyId)),
     );
@@ -622,6 +658,7 @@ export function useLunemirRuntime() {
     if (!character || streaming) return;
     const nextConversation = await createConversationRecord(character, { title: `新会话 · ${conversations.length + 1}`, personaName: activePersona?.name });
     setConversations((current) => [nextConversation, ...current]);
+    setAllConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);
   }
 
@@ -654,6 +691,7 @@ export function useLunemirRuntime() {
       setConversation(nextConversation);
       setMessages(openingMessages);
       setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+      setAllConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
       await saveConversation(nextConversation);
       refreshContext(character, openingMessages);
       return;
@@ -665,6 +703,7 @@ export function useLunemirRuntime() {
       personaName: activePersona?.name,
     });
     setConversations((current) => [nextConversation, ...current]);
+    setAllConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);
   }
 
@@ -681,6 +720,7 @@ export function useLunemirRuntime() {
       branchedFromMessageId: messageId,
     });
     setConversations((current) => [nextConversation, ...current]);
+    setAllConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);
   }
 
@@ -689,6 +729,7 @@ export function useLunemirRuntime() {
     if (!current || !title.trim()) return;
     const nextConversation = { ...current, title: title.trim(), updatedAt: new Date().toISOString() };
     setConversations((items) => items.map((item) => item.id === conversationId ? nextConversation : item));
+    setAllConversations((items) => items.map((item) => item.id === conversationId ? nextConversation : item));
     if (conversation?.id === conversationId) setConversation(nextConversation);
     await saveConversation(nextConversation);
   }
@@ -698,6 +739,8 @@ export function useLunemirRuntime() {
     if (!character || streaming) return;
     await deleteStoryEvents(conversationId);
     await removeStoredConversation(conversationId);
+    setAllConversations((items) => items.filter((item) => item.id !== conversationId));
+    setAllStoryEvents((items) => items.filter((item) => item.storyId !== conversationId));
     const settings = await getSettings();
     const nextPersonaAssignments = Object.fromEntries(
       Object.entries(settings.personaAssignments ?? {}).filter(([storyId]) => storyId !== conversationId),
@@ -705,7 +748,10 @@ export function useLunemirRuntime() {
     setPersonaAssignments(nextPersonaAssignments);
     await saveSettings({ ...settings, personaAssignments: nextPersonaAssignments, updatedAt: new Date().toISOString() });
     let remaining = conversations.filter((item) => item.id !== conversationId);
-    if (remaining.length === 0) remaining = [await createConversationRecord(character, { title: "新的故事" })];
+    if (remaining.length === 0) {
+      remaining = [await createConversationRecord(character, { title: "新的故事" })];
+      setAllConversations((items) => [remaining[0], ...items]);
+    }
     setConversations(remaining);
     if (conversation?.id === conversationId) await activateConversationRecord(remaining[0]);
   }
@@ -840,6 +886,8 @@ export function useLunemirRuntime() {
       .sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt));
     storyEventsRef.current = nextEvents;
     setStoryEvents(nextEvents);
+    setAllStoryEvents((items) => [...items.filter((item) => item.id !== event.id), event]
+      .sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt)));
     contextResourcesRef.current.storyEvents = nextEvents;
     refreshContext(character, contextMessages);
   }
@@ -1010,25 +1058,73 @@ export function useLunemirRuntime() {
     }
   }
 
-  async function sendPhoneMessage(content: string) {
-    const character = activeCharacter;
-    const persona = activePersona;
-    if (!character || !persona || !conversation || !content.trim()) return;
-    const storyState = normalizeStoryState(conversation.storyState, character, conversation.createdAt);
-    const latestIncoming = [...storyEventsRef.current].reverse().find((event) => event.status === "committed" && event.eventType === "phone_message_received");
+  async function ensurePhoneStory(characterId: string) {
+    const character = characters.find((item) => item.id === characterId);
+    if (!character) return null;
+    const settings = await getSettings();
+    let characterStories = allConversations.filter((item) => item.characterId === characterId);
+    if (characterStories.length === 0) characterStories = await listConversations(characterId);
+    let target = characterStories.find((item) => item.id === settings.activeConversationIds?.[characterId])
+      ?? [...characterStories].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))[0];
+    if (!target) {
+      const persona = personas.find((item) => item.id === settings.activePersonaId) ?? personas[0];
+      target = await createConversationRecord(character, { personaName: persona?.name });
+      const nextPersonaAssignments = persona
+        ? { ...(settings.personaAssignments ?? {}), [target.id]: persona.id }
+        : settings.personaAssignments ?? {};
+      setPersonaAssignments(nextPersonaAssignments);
+      await saveSettings({
+        ...settings,
+        activeConversationIds: { ...(settings.activeConversationIds ?? {}), [characterId]: target.id },
+        personaAssignments: nextPersonaAssignments,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    setAllConversations((items) => [target, ...items.filter((item) => item.id !== target.id)]);
+    return target;
+  }
+
+  async function sendPhoneMessageToStory(characterId: string, storyId: string | undefined, content: string) {
+    const character = characters.find((item) => item.id === characterId);
+    const targetStory = storyId
+      ? allConversations.find((item) => item.id === storyId) ?? (await listConversations(characterId)).find((item) => item.id === storyId)
+      : await ensurePhoneStory(characterId);
+    if (!character || !targetStory || !content.trim()) return false;
+    const settings = await getSettings();
+    const persona = personas.find((item) => item.id === settings.personaAssignments?.[targetStory.id])
+      ?? activePersona
+      ?? personas[0];
+    if (!persona) return false;
+    const targetEvents = targetStory.id === conversation?.id
+      ? storyEventsRef.current
+      : allStoryEvents.filter((item) => item.storyId === targetStory.id);
+    const storyState = normalizeStoryState(targetStory.storyState, character, targetStory.createdAt);
+    const latestIncoming = [...targetEvents].reverse().find((event) => event.status === "committed" && event.eventType === "phone_message_received");
     const event = createStoryEvent({
-      storyId: conversation.id,
+      storyId: targetStory.id,
       eventType: "phone_message_sent",
       actorId: persona.id,
       targetId: character.id,
-      content,
+      content: content.trim(),
       source: "user",
       replyToEventId: latestIncoming?.id,
       storyTime: storyState.currentTime,
     });
-    await commitStoryEvent(event);
+    if (targetStory.id === conversation?.id) {
+      await commitStoryEvent(event);
+    } else {
+      await saveStoryEvent(event);
+      setAllStoryEvents((items) => [...items.filter((item) => item.id !== event.id), event]
+        .sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt)));
+    }
     setPhoneEventStatus("linked");
-    setPhoneEventMessage("手机回复已写入统一剧情时间线，下一轮主剧情会读取它。");
+    setPhoneEventMessage(`发给 ${character.name} 的回复已写入对应剧情时间线。`);
+    return true;
+  }
+
+  async function sendPhoneMessage(content: string) {
+    if (!activeCharacter || !conversation) return false;
+    return sendPhoneMessageToStory(activeCharacter.id, conversation.id, content);
   }
 
   async function revertStoryEvent(eventId: string) {
@@ -1056,16 +1152,23 @@ export function useLunemirRuntime() {
     return true;
   }
 
-  async function markPhoneEventsRead() {
+  async function markPhoneEventsRead(storyId = conversation?.id) {
+    if (!storyId) return;
     const now = new Date().toISOString();
-    const changed = storyEventsRef.current.filter((event) => event.status === "committed" && event.eventType === "phone_message_received" && !event.readAt);
+    const sourceEvents = storyId === conversation?.id
+      ? storyEventsRef.current
+      : allStoryEvents.filter((event) => event.storyId === storyId);
+    const changed = sourceEvents.filter((event) => event.status === "committed" && event.eventType === "phone_message_received" && !event.readAt);
     if (changed.length === 0) return;
     const changedIds = new Set(changed.map((event) => event.id));
-    const nextEvents = storyEventsRef.current.map((event) => changedIds.has(event.id) ? { ...event, readAt: now } : event);
+    const nextEvents = sourceEvents.map((event) => changedIds.has(event.id) ? { ...event, readAt: now } : event);
     await Promise.all(nextEvents.filter((event) => changedIds.has(event.id)).map((event) => saveStoryEvent(event)));
-    storyEventsRef.current = nextEvents;
-    contextResourcesRef.current.storyEvents = nextEvents;
-    setStoryEvents(nextEvents);
+    setAllStoryEvents((items) => items.map((event) => changedIds.has(event.id) ? { ...event, readAt: now } : event));
+    if (storyId === conversation?.id) {
+      storyEventsRef.current = nextEvents;
+      contextResourcesRef.current.storyEvents = nextEvents;
+      setStoryEvents(nextEvents);
+    }
   }
 
   function modelIsReady() {
@@ -1809,6 +1912,28 @@ export function useLunemirRuntime() {
     }
   }
 
+  async function savePhoneWallpaper(file: File) {
+    if (!file.type.startsWith("image/")) {
+      setRuntimeError("请选择 JPG、PNG、WebP 等图片文件作为手机壁纸。");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      setRuntimeError("手机壁纸不能超过 8 MB。");
+      return;
+    }
+    try {
+      const phoneWallpaperImage = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("无法读取手机壁纸。"));
+        reader.onerror = () => reject(reader.error ?? new Error("无法读取手机壁纸。"));
+        reader.readAsDataURL(file);
+      });
+      await saveAppearance({ ...appearance, phoneWallpaper: "custom", phoneWallpaperImage });
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "无法保存手机壁纸。");
+    }
+  }
+
   async function testConnection() {
     setConnectionStatus("testing");
     setRuntimeError("");
@@ -1882,11 +2007,13 @@ export function useLunemirRuntime() {
     presets,
     activePreset,
     conversations,
+    allConversations,
     activeConversation: conversation,
     messages,
     storyEvents,
+    allStoryEvents,
     storyState: conversation && activeCharacter ? normalizeStoryState(conversation.storyState, activeCharacter, conversation.createdAt) : null,
-    unreadPhoneEvents: storyEvents.filter((event) => event.status === "committed" && event.eventType === "phone_message_received" && !event.readAt).length,
+    unreadPhoneEvents: allStoryEvents.filter((event) => event.status === "committed" && event.eventType === "phone_message_received" && !event.readAt).length,
     phoneEventStatus,
     phoneEventMessage,
     streaming,
@@ -1897,6 +2024,7 @@ export function useLunemirRuntime() {
     previewAppearance,
     saveAppearance,
     saveCustomBackground,
+    savePhoneWallpaper,
     modelConfig,
     setModelConfig,
     apiKey,
@@ -1949,6 +2077,8 @@ export function useLunemirRuntime() {
     selectMessageAlternative,
     requestPhoneEvent,
     sendPhoneMessage,
+    sendPhoneMessageToStory,
+    ensurePhoneStory,
     markPhoneEventsRead,
     saveStoryState,
     advanceStoryTime,

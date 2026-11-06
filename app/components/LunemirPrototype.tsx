@@ -120,6 +120,8 @@ export function LunemirPrototype() {
   const [phoneApp, setPhoneApp] = useState<PhoneApp>("home");
   const [phoneMessageView, setPhoneMessageView] = useState<PhoneMessageView>("list");
   const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneContactQuery, setPhoneContactQuery] = useState("");
+  const [phoneCharacterId, setPhoneCharacterId] = useState("");
   const [phoneButtonPosition, setPhoneButtonPosition] = useState<{ x: number; y: number } | null>(null);
   const [phonePanelPosition, setPhonePanelPosition] = useState<{ x: number; y: number } | null>(null);
   const [draggingPhone, setDraggingPhone] = useState<DragTarget | null>(null);
@@ -160,6 +162,10 @@ export function LunemirPrototype() {
     moved: boolean;
   } | null>(null);
   const suppressPhoneClickRef = useRef(false);
+  const phonePositionRef = useRef<{
+    button: { x: number; y: number } | null;
+    panel: { x: number; y: number } | null;
+  }>({ button: null, panel: null });
 
   const pageTitle = useMemo(
     () => navItems.find((item) => item.id === section)?.label ?? "对话",
@@ -289,12 +295,57 @@ export function LunemirPrototype() {
     if (!query) return runtime.conversations;
     return runtime.conversations.filter((item) => [item.title, ...item.messages.slice(-8).map((message) => message.content)].join(" ").toLocaleLowerCase().includes(query));
   }, [runtime.conversations, sessionQuery]);
-  const phoneMessages = useMemo(
-    () => runtime.storyEvents.filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent")),
-    [runtime.storyEvents],
-  );
+  const phoneThreads = useMemo(() => runtime.characters.map((character) => {
+    const characterStories = runtime.allConversations
+      .filter((item) => item.characterId === character.id)
+      .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    const story = character.id === runtime.activeCharacter?.id && runtime.activeConversation
+      ? runtime.activeConversation
+      : characterStories[0];
+    const events = story
+      ? runtime.allStoryEvents.filter((event) => event.storyId === story.id
+        && event.status === "committed"
+        && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent"))
+      : [];
+    const lastEvent = events.at(-1);
+    return {
+      character,
+      story,
+      events,
+      lastEvent,
+      unread: events.filter((event) => event.eventType === "phone_message_received" && !event.readAt).length,
+      sortTime: lastEvent?.storyTime ?? story?.updatedAt ?? character.updatedAt,
+    };
+  }).sort((left, right) => right.sortTime.localeCompare(left.sortTime)), [
+    runtime.activeCharacter?.id,
+    runtime.activeConversation,
+    runtime.allConversations,
+    runtime.allStoryEvents,
+    runtime.characters,
+  ]);
+  const filteredPhoneThreads = useMemo(() => {
+    const query = phoneContactQuery.trim().toLocaleLowerCase();
+    if (!query) return phoneThreads;
+    return phoneThreads.filter((thread) => [
+      thread.character.name,
+      thread.character.nickname,
+      thread.story?.title ?? "",
+      thread.lastEvent?.content ?? "",
+    ].join(" ").toLocaleLowerCase().includes(query));
+  }, [phoneContactQuery, phoneThreads]);
+  const resolvedPhoneCharacterId = phoneCharacterId && runtime.characters.some((character) => character.id === phoneCharacterId)
+    ? phoneCharacterId
+    : runtime.activeCharacter?.id ?? runtime.characters[0]?.id ?? "";
+  const activePhoneThread = phoneThreads.find((thread) => thread.character.id === resolvedPhoneCharacterId)
+    ?? phoneThreads.find((thread) => thread.character.id === runtime.activeCharacter?.id)
+    ?? phoneThreads[0];
+  const phoneCharacter = activePhoneThread?.character ?? runtime.activeCharacter;
+  const phoneMessages = activePhoneThread?.events ?? [];
+  const phoneActiveName = phoneCharacter?.nickname || phoneCharacter?.name || "Lunemir";
   const phoneWidth = 350 * runtime.appearance.phoneScale / 100;
   const phoneHeight = 720 * runtime.appearance.phoneScale / 100;
+  const effectivePhoneButtonPosition = phoneButtonPosition ?? runtime.appearance.phoneButtonPosition ?? null;
+  const effectivePhonePanelPosition = phonePanelPosition ?? runtime.appearance.phonePanelPosition ?? null;
   const phoneShellStyle: CSSProperties = {
     width: `${phoneWidth}px`,
     minWidth: `${phoneWidth}px`,
@@ -302,8 +353,11 @@ export function LunemirPrototype() {
     height: `${phoneHeight}px`,
     minHeight: `${phoneHeight}px`,
     maxHeight: `${phoneHeight}px`,
-    ...(phonePanelPosition ? { left: phonePanelPosition.x, top: phonePanelPosition.y, right: "auto", bottom: "auto" } : {}),
+    ...(effectivePhonePanelPosition ? { left: effectivePhonePanelPosition.x, top: effectivePhonePanelPosition.y, right: "auto", bottom: "auto" } : {}),
   };
+  const phoneWallpaperStyle = runtime.appearance.phoneWallpaper === "custom" && runtime.appearance.phoneWallpaperImage
+    ? { backgroundImage: `url("${runtime.appearance.phoneWallpaperImage}")` }
+    : undefined;
 
   useEffect(() => {
     if (!navigationOpen) return;
@@ -340,11 +394,19 @@ export function LunemirPrototype() {
     if (!phoneOpen || phoneApp !== "messages" || phoneMessageView !== "chat") return;
     const messageList = phoneMessageListRef.current;
     if (messageList) messageList.scrollTop = messageList.scrollHeight;
-  }, [runtime.storyEvents.length, phoneOpen, phoneApp, phoneMessageView]);
+  }, [phoneMessages.length, phoneOpen, phoneApp, phoneMessageView]);
 
   function openPhoneApp(app: Exclude<PhoneApp, "home">) {
     setPhoneApp(app);
     if (app === "messages") setPhoneMessageView("list");
+  }
+
+  async function openPhoneThread(characterId: string) {
+    setPhoneCharacterId(characterId);
+    const existing = phoneThreads.find((thread) => thread.character.id === characterId)?.story;
+    const story = existing ?? await runtime.ensurePhoneStory(characterId);
+    setPhoneMessageView("chat");
+    if (story) await runtime.markPhoneEventsRead(story.id);
   }
 
   function openMainSectionFromPhone(nextSection: Section) {
@@ -370,6 +432,10 @@ export function LunemirPrototype() {
       height: rect.height,
       moved: false,
     };
+    phonePositionRef.current = {
+      button: effectivePhoneButtonPosition,
+      panel: effectivePhonePanelPosition,
+    };
     suppressPhoneClickRef.current = false;
     setDraggingPhone(target);
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -388,6 +454,7 @@ export function LunemirPrototype() {
     };
     if (drag.target === "button") setPhoneButtonPosition(next);
     else setPhonePanelPosition(next);
+    phonePositionRef.current[drag.target] = next;
   }
 
   function endPhoneDrag(event: ReactPointerEvent<HTMLElement>) {
@@ -396,6 +463,11 @@ export function LunemirPrototype() {
     suppressPhoneClickRef.current = drag.target === "button" && drag.moved;
     phoneDragRef.current = null;
     setDraggingPhone(null);
+    void runtime.saveAppearance({
+      ...runtime.appearance,
+      phoneButtonPosition: phonePositionRef.current.button ?? runtime.appearance.phoneButtonPosition,
+      phonePanelPosition: phonePositionRef.current.panel ?? runtime.appearance.phonePanelPosition,
+    });
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
   }
 
@@ -438,6 +510,7 @@ export function LunemirPrototype() {
       data-avatar-shape={runtime.appearance.avatarShape}
       data-avatar-layout={runtime.appearance.avatarLayout}
       data-font-family={runtime.appearance.fontFamily}
+      data-phone-wallpaper={runtime.appearance.phoneWallpaper}
       data-has-background={activeBackground ? "true" : "false"}
       data-section={section}
       style={appearanceStyle}
@@ -841,7 +914,7 @@ export function LunemirPrototype() {
 
       <button
         className={`${phoneOpen ? "phone-fab is-active" : "phone-fab"}${draggingPhone === "button" ? " is-dragging" : ""}`}
-        style={phoneButtonPosition ? { left: phoneButtonPosition.x, top: phoneButtonPosition.y, right: "auto", bottom: "auto" } : undefined}
+        style={effectivePhoneButtonPosition ? { left: effectivePhoneButtonPosition.x, top: effectivePhoneButtonPosition.y, right: "auto", bottom: "auto" } : undefined}
         onPointerDown={(event) => beginPhoneDrag(event, "button")}
         onPointerMove={movePhoneDrag}
         onPointerUp={endPhoneDrag}
@@ -863,7 +936,7 @@ export function LunemirPrototype() {
         aria-hidden={!phoneOpen}
       >
         <div className={`phone-frame phone-screen-${phoneApp}`}>
-          <div className="phone-wallpaper" />
+          <div className="phone-wallpaper" style={phoneWallpaperStyle} />
           <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机">
             <span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
             <i className="phone-island" />
@@ -891,18 +964,22 @@ export function LunemirPrototype() {
           </div> : <div className="phone-app-view">
             <header className="phone-app-header">
               <button type="button" onClick={() => { if (phoneApp === "messages" && phoneMessageView === "chat") setPhoneMessageView("list"); else setPhoneApp("home"); }} aria-label="返回">‹</button>
-              <strong>{phoneApp === "messages" && phoneMessageView === "chat" ? activeName : phoneApps.find((app) => app.id === phoneApp)?.label}</strong>
+              <strong>{phoneApp === "messages" && phoneMessageView === "chat" ? phoneActiveName : phoneApps.find((app) => app.id === phoneApp)?.label}</strong>
               {phoneApp === "messages" && phoneMessageView === "list" ? <button type="button" disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()} aria-label="检查新消息">{runtime.phoneEventStatus === "checking" ? "…" : "+"}</button> : <span />}
             </header>
             <div className="phone-content">
               {phoneApp === "messages" && phoneMessageView === "list" ? <div className="phone-conversation-list">
-                <label className="phone-search"><span>⌕</span><input readOnly placeholder="搜索" aria-label="搜索消息（即将支持）" /></label>
-                <button className="phone-conversation" type="button" onClick={() => { setPhoneMessageView("chat"); void runtime.markPhoneEventsRead(); }}>
-                  <span className="phone-avatar" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span>
-                  <span><strong>{activeName}</strong><small>{phoneMessages[phoneMessages.length - 1]?.content || "故事里的消息会同步到这里"}</small></span>
-                  <time>{phoneMessages.length > 0 ? new Date(phoneMessages[phoneMessages.length - 1].storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}</time>
-                  {runtime.unreadPhoneEvents > 0 ? <b>{runtime.unreadPhoneEvents}</b> : null}
-                </button>
+                <label className="phone-search"><span>⌕</span><input value={phoneContactQuery} onChange={(event) => setPhoneContactQuery(event.target.value)} placeholder="搜索联系人或消息" aria-label="搜索联系人或消息" /></label>
+                {filteredPhoneThreads.map((thread) => {
+                  const name = thread.character.nickname || thread.character.name;
+                  return <button className="phone-conversation" type="button" key={thread.character.id} onClick={() => void openPhoneThread(thread.character.id)}>
+                    <span className="phone-avatar" style={thread.character.avatarDataUrl ? { backgroundImage: `url(${thread.character.avatarDataUrl})` } : undefined}>{thread.character.avatarDataUrl ? "" : name.charAt(0)}</span>
+                    <span><strong>{name}</strong><small>{thread.lastEvent?.content || thread.story?.title || "点击开始手机通信"}</small></span>
+                    <time>{thread.lastEvent ? new Date(thread.lastEvent.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}</time>
+                    {thread.unread > 0 ? <b>{thread.unread}</b> : null}
+                  </button>;
+                })}
+                {filteredPhoneThreads.length === 0 ? <p className="phone-caption">没有找到匹配的联系人或消息。</p> : null}
                 <p className="phone-system-note">主剧情和手机共用同一条时间线。这里的回复会作为正式事件进入下一轮剧情。</p>
               </div> : null}
 
@@ -911,25 +988,30 @@ export function LunemirPrototype() {
                   {phoneMessages.map((event) => {
                     const incoming = event.eventType === "phone_message_received";
                     return <article className={incoming ? "phone-message incoming" : "phone-message outgoing"} key={event.id}>
-                      {incoming ? <span className="phone-bubble-avatar" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span> : null}
+                      {incoming ? <span className="phone-bubble-avatar" style={phoneCharacter?.avatarDataUrl ? { backgroundImage: `url(${phoneCharacter.avatarDataUrl})` } : undefined}>{phoneCharacter?.avatarDataUrl ? "" : phoneActiveName.charAt(0)}</span> : null}
                       <span className="phone-message-bubble">{event.content}</span>
                       <time>{new Date(event.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{incoming && event.readAt ? " · 已读" : ""}</time>
                     </article>;
                   })}
-                  {phoneMessages.length === 0 ? <p className="phone-caption">还没有手机通信。点击右上角“+”或推进剧情时间，系统会按角色主动性与冷却规则检查一次。</p> : null}
+                  {phoneMessages.length === 0 ? <p className="phone-caption">还没有与 {phoneActiveName} 的手机通信。你可以先发送一条消息；对应剧情下次生成时会读取它。</p> : null}
                 </div>
-                <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content) return; setPhoneDraft(""); void runtime.sendPhoneMessage(content); }}>
+                <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content || !phoneCharacter) return; setPhoneDraft(""); void (async () => { const story = activePhoneThread?.story ?? await runtime.ensurePhoneStory(phoneCharacter.id); await runtime.sendPhoneMessageToStory(phoneCharacter.id, story?.id, content); })(); }}>
                   <button type="button" aria-label="语音功能待接入">◉</button>
-                  <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="发送消息" aria-label={`回复 ${activeName}`} maxLength={600} />
+                  <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="发送消息" aria-label={`回复 ${phoneActiveName}`} maxLength={600} />
                   <button className="phone-send" type="submit" disabled={!phoneDraft.trim()}>发送</button>
                 </form>
               </div> : null}
 
               {phoneApp === "contacts" ? <div className="phone-contact-page">
-                <button className="phone-contact-card" type="button" onClick={() => { setPhoneApp("messages"); setPhoneMessageView("chat"); void runtime.markPhoneEventsRead(); }}>
-                  <span className="phone-avatar large" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span>
-                  <span><strong>{activeName}</strong><small>{runtime.activeCharacter?.description || "当前剧情角色"}</small></span><i>›</i>
-                </button>
+                <label className="phone-search contact-search"><span>⌕</span><input value={phoneContactQuery} onChange={(event) => setPhoneContactQuery(event.target.value)} placeholder="搜索联系人" aria-label="搜索联系人" /></label>
+                <h4>剧情联系人 · {filteredPhoneThreads.length}</h4>
+                <div className="phone-contact-list">{filteredPhoneThreads.map((thread) => {
+                  const name = thread.character.nickname || thread.character.name;
+                  return <button className="phone-contact-card" type="button" key={thread.character.id} onClick={() => { setPhoneApp("messages"); void openPhoneThread(thread.character.id); }}>
+                    <span className="phone-avatar large" style={thread.character.avatarDataUrl ? { backgroundImage: `url(${thread.character.avatarDataUrl})` } : undefined}>{thread.character.avatarDataUrl ? "" : name.charAt(0)}</span>
+                    <span><strong>{name}</strong><small>{thread.character.description || thread.story?.title || "剧情角色"}</small></span><i>›</i>
+                  </button>;
+                })}</div>
                 <h4>当前使用者</h4>
                 <button className="phone-contact-card" type="button" onClick={() => { setPhoneOpen(false); setPersonaOpen(true); }}>
                   <span className="phone-avatar large persona" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "我").charAt(0)}</span>
@@ -963,6 +1045,14 @@ export function LunemirPrototype() {
                   <span><strong>手机尺寸</strong><small>保持手机比例，只改变悬浮窗口大小</small></span>
                   <div><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.max(65, runtime.appearance.phoneScale - 5) })} aria-label="缩小手机">−</button><b>{runtime.appearance.phoneScale}%</b><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.min(100, runtime.appearance.phoneScale + 5) })} aria-label="放大手机">＋</button></div>
                   <button className="phone-size-reset" type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: 82 })}>恢复默认大小</button>
+                </section>
+                <section className="phone-wallpaper-setting">
+                  <span><strong>手机壁纸</strong><small>独立于聊天角色背景</small></span>
+                  <div className="phone-wallpaper-options">
+                    {(["moon", "aurora", "rose"] as const).map((wallpaper) => <button className={`${wallpaper}${runtime.appearance.phoneWallpaper === wallpaper ? " is-active" : ""}`} type="button" key={wallpaper} onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneWallpaper: wallpaper, phoneWallpaperImage: undefined })} aria-label={`使用 ${wallpaper} 手机壁纸`} />)}
+                    <label className={runtime.appearance.phoneWallpaper === "custom" ? "is-active" : ""}>＋<input type="file" accept="image/*" onChange={(event) => { const file = event.target.files?.[0]; if (file) void runtime.savePhoneWallpaper(file); event.currentTarget.value = ""; }} /></label>
+                  </div>
+                  <button className="phone-position-reset" type="button" onClick={() => { setPhoneButtonPosition(null); setPhonePanelPosition(null); phonePositionRef.current = { button: null, panel: null }; void runtime.saveAppearance({ ...runtime.appearance, phoneButtonPosition: undefined, phonePanelPosition: undefined }); }}>恢复手机默认位置</button>
                 </section>
                 <div className="phone-setting-group"><button type="button" onClick={() => setPhoneApp("story")}><span><i className="gold">◷</i>剧情状态</span><b>›</b></button><button type="button" onClick={() => setPhoneApp("contacts")}><span><i className="green">人</i>角色与人设</span><b>›</b></button></div>
                 <p className="phone-privacy-note">角色、剧情、预设和手机记录默认保存在当前设备。API Key 不会显示在手机桌面。</p>

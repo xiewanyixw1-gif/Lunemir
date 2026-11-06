@@ -162,6 +162,10 @@ export async function listConversations(characterId: string) {
   return requestToPromise(index.getAll(characterId)) as Promise<ConversationRecord[]>;
 }
 
+export function listAllConversations() {
+  return getAll<ConversationRecord>(CONVERSATION_STORE);
+}
+
 export function saveConversation(conversation: ConversationRecord) {
   return put(CONVERSATION_STORE, conversation);
 }
@@ -175,6 +179,11 @@ export async function listStoryEvents(storyId: string) {
   const transaction = database.transaction(STORY_EVENT_STORE, "readonly");
   const index = transaction.objectStore(STORY_EVENT_STORE).index("storyId");
   const events = await requestToPromise(index.getAll(storyId)) as StoryEvent[];
+  return events.sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt));
+}
+
+export async function listAllStoryEvents() {
+  const events = await getAll<StoryEvent>(STORY_EVENT_STORE);
   return events.sort((left, right) => left.storyTime.localeCompare(right.storyTime) || left.createdAt.localeCompare(right.createdAt));
 }
 

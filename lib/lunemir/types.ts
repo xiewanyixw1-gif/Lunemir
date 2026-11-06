@@ -306,6 +306,10 @@ export type AppearanceSettings = {
   messageMaxWidth: number;
   mobileReadingInset: number;
   phoneScale: number;
+  phoneWallpaper: "moon" | "aurora" | "rose" | "custom";
+  phoneWallpaperImage?: string;
+  phoneButtonPosition?: { x: number; y: number };
+  phonePanelPosition?: { x: number; y: number };
 };
 
 export type PersistedSettings = {
