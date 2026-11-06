@@ -16,7 +16,6 @@ import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 import { SafeMessageContent } from "./SafeMessageContent";
 import { StoryGuidanceModal } from "./StoryGuidanceModal";
-import { StoryReadingHeader } from "./StoryReadingHeader";
 import { StoryTimelineModal } from "./StoryTimelineModal";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
@@ -597,7 +596,7 @@ export function LunemirPrototype() {
           <section className="chat-stage" aria-label="主剧情阅读区">
             <section
               className="message-list"
-              aria-labelledby="story-reading-title"
+              aria-label="主剧情消息"
               tabIndex={0}
               ref={messageListRef}
               onScroll={(event) => {
@@ -607,13 +606,6 @@ export function LunemirPrototype() {
                 setShowJumpToLatest(!nearLatest);
               }}
             >
-              <StoryReadingHeader
-                title={activeConversationTitle}
-                scene={replaceRoleMacros(runtime.storyState?.scene || runtime.activeCharacter?.scenario || "", activeName, runtime.activePersona?.name ?? "用户")}
-                storyState={runtime.storyState}
-                fallbackTime={phoneStoryTime}
-                onOpenTimeline={() => setStoryTimelineOpen(true)}
-              />
               <div className="message-log" role="log" aria-label="剧情消息" aria-live="polite" aria-relevant="additions text">
                 {runtime.messages.length === 0 && <section className="empty-chat" aria-label="空故事"><span aria-hidden="true">◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></section>}
                 {runtime.messages.map((message, index) => {

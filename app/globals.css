@@ -209,22 +209,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .chat-stage{position:relative;height:100%;min-height:0;overflow:hidden;grid-template-rows:minmax(0,1fr) auto}
 .message-list{min-height:0;overflow-y:auto;overflow-x:hidden;overscroll-behavior:contain;scroll-behavior:smooth;padding:20px clamp(18px,4vw,54px) 28px;scroll-padding-bottom:26px}
 .message-list:focus-visible{outline:1px solid rgba(var(--accent-rgb),.28);outline-offset:-2px}
-.story-reading-header{width:min(760px,100%);margin:4px auto 46px;padding:25px clamp(8px,3vw,30px) 27px;color:var(--lm-text-primary);text-align:center}
-.story-reading-overline{display:flex;align-items:center;gap:13px;margin:0;color:var(--accent);font-size:8px;font-weight:700;letter-spacing:.24em}
-.story-reading-overline::before,.story-reading-overline::after{content:"";height:1px;flex:1;background:linear-gradient(90deg,transparent,rgba(var(--accent-rgb),.34))}
-.story-reading-overline::after{background:linear-gradient(90deg,rgba(var(--accent-rgb),.34),transparent)}
-.story-reading-overline span{white-space:nowrap}
-.story-reading-header h2{margin:17px 0 0;font:500 clamp(24px,3vw,34px)/1.25 Georgia,"Noto Serif SC","Songti SC",serif;letter-spacing:.04em;text-wrap:balance;text-shadow:0 2px 24px rgba(0,0,0,.58)}
-.story-reading-scene{max-width:620px;margin:11px auto 0;color:var(--lm-text-secondary);font-size:12px;line-height:1.75;text-wrap:balance;white-space:pre-wrap}
-.story-reading-context{display:flex;align-items:center;justify-content:center;gap:13px;margin-top:18px;color:var(--lm-text-muted)}
-.story-reading-context dl{display:flex;align-items:center;justify-content:center;gap:0;margin:0}
-.story-reading-context dl>div{position:relative;display:flex;align-items:baseline;gap:5px;padding:0 11px}
-.story-reading-context dl>div+div::before{content:"";position:absolute;left:0;top:50%;width:2px;height:2px;border-radius:50%;background:rgba(var(--accent-rgb),.55)}
-.story-reading-context dt{color:#777185;font-size:9px;letter-spacing:.08em}
-.story-reading-context dd{margin:0;color:#aaa3b8;font-size:10px}
-.story-reading-context button{display:inline-flex;align-items:center;gap:5px;border:1px solid rgba(var(--accent-rgb),.16);border-radius:999px;padding:6px 9px;background:rgba(var(--accent-rgb),.045);color:#9a92aa;cursor:pointer;font-size:9px;transition:border-color .2s ease,background .2s ease,color .2s ease}
-.story-reading-context button:hover,.story-reading-context button:focus-visible{border-color:rgba(var(--accent-rgb),.38);background:rgba(var(--accent-rgb),.1);color:var(--lm-text-primary)}
-.story-reading-context button span{color:var(--accent);font-size:10px}
 .message-row{display:flex;align-items:flex-start;gap:var(--lm-avatar-gap);width:min(var(--lm-chat-max-width),100%);max-width:100%;margin:0 auto 26px}
 .message-row.user-row{justify-content:flex-end}
 .message-row.character-row{justify-content:flex-start}
@@ -425,8 +409,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .lunemir-app[data-message-style="novel-flow"] .character-message .safe-message-content{width:100%}
 
 @media (max-width:700px){.lunemir-app[data-message-style="novel-flow"] .message-list{padding-right:var(--lm-mobile-reading-inset);padding-left:var(--lm-mobile-reading-inset)}.lunemir-app[data-message-style="novel-flow"] .character-message,.lunemir-app[data-glass-scope="messages"][data-message-style="novel-flow"] .character-message{width:100%!important;max-width:100%!important;padding:8px 0;background:transparent}.novel-message-content{gap:max(16px,var(--lm-paragraph-spacing))}.message-tools{margin-top:9px}.message-actions button{min-height:30px;padding:6px 9px}}
-
-@media (max-width:700px){.story-reading-header{margin:0 auto 32px;padding:16px 2px 21px}.story-reading-header h2{margin-top:13px;font-size:23px}.story-reading-scene{margin-top:8px;font-size:11px;line-height:1.65}.story-reading-context{align-items:stretch;flex-direction:column;gap:10px;margin-top:14px}.story-reading-context dl{flex-wrap:wrap}.story-reading-context dl>div{padding:2px 8px}.story-reading-context button{align-self:center}.story-reading-overline{gap:9px;font-size:7px}}
 
 @media (max-width:700px){.lunemir-app[data-avatar-layout="header"] .message{max-width:100%}.lunemir-app[data-avatar-layout="header"] .user-message{max-width:92%}.appearance-section-note{max-width:150px;text-align:right}.appearance-heading-actions{justify-content:flex-start}.appearance-heading-actions .subtle-label{width:100%}}
 
