@@ -395,10 +395,9 @@ test("persists one story clock and drives bounded NPC initiative checks", async 
   assert.match(timeline, /一次推进只触发一次受控检查/);
   assert.match(timeline, /天气 \/ 环境/);
   assert.match(prototype, /剧情时间与事件/);
-  assert.match(prototype, /scene-story-header/);
-  assert.match(prototype, /setSceneHeaderCompact/);
+  assert.doesNotMatch(prototype, /scene-story-header/);
   assert.match(styles, /story-timeline-layout/);
-  assert.match(styles, /scene-story-header\.is-compact/);
+  assert.doesNotMatch(styles, /scene-story-header/);
 });
 
 test("resolves persona macros and supports portrait-above-text appearance", async () => {
@@ -417,9 +416,12 @@ test("resolves persona macros and supports portrait-above-text appearance", asyn
   assert.match(context, /replaceMacros\(message\.content\)/);
   assert.match(runtime, /replaceRoleMacros\(content/);
   assert.match(prototype, /displayContent/);
+  assert.match(prototype, /novel-message-content/);
   assert.match(picker, /replaceRoleMacros\(greeting/);
   assert.match(appearance, /应用角色映幕/);
   assert.match(appearance, /头像在上/);
   assert.match(defaults, /avatarLayout: "header"/);
   assert.match(styles, /data-avatar-layout="header"/);
+  assert.match(styles, /text-indent:2em/);
+  assert.match(styles, /bottom:calc\(100% \+ 5px\)/);
 });

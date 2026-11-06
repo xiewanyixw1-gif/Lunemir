@@ -294,7 +294,6 @@ export type AppearanceSettings = {
   showCharacterName: boolean;
   showUserName: boolean;
   showTimestamp: boolean;
-  showSceneHeader: boolean;
   avatarLayout: "side" | "header";
   avatarShape: "circle" | "square" | "rounded";
   avatarSize: number;

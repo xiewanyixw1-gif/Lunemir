@@ -122,7 +122,6 @@ export function ChatAppearancePanel({
     showCharacterName: true,
     showUserName: true,
     showTimestamp: false,
-    showSceneHeader: true,
     fontFamily: "serif",
     fontSize: 18,
     lineHeight: 1.95,
@@ -178,7 +177,6 @@ export function ChatAppearancePanel({
         <div className="appearance-grid two">
           <ChoiceGroup label="正文字体" value={value.fontFamily} options={[{ value: "serif", label: "小说衬线" }, { value: "sans", label: "现代无衬线" }, { value: "system", label: "跟随系统" }]} onChange={(next) => savePatch("fontFamily", next)} />
           <div className="appearance-toggles" aria-label="消息信息显示">
-            <button type="button" className={value.showSceneHeader ? "is-active" : ""} onClick={() => savePatch("showSceneHeader", !value.showSceneHeader)}>场景头</button>
             <button type="button" className={value.showTimestamp ? "is-active" : ""} onClick={() => savePatch("showTimestamp", !value.showTimestamp)}>时间</button>
             <button type="button" className={value.showCharacterName ? "is-active" : ""} onClick={() => savePatch("showCharacterName", !value.showCharacterName)}>角色名</button>
             <button type="button" className={value.showUserName ? "is-active" : ""} onClick={() => savePatch("showUserName", !value.showUserName)}>人设名</button>

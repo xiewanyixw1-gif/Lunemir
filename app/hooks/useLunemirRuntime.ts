@@ -146,7 +146,6 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     showCharacterName: value?.showCharacterName ?? DEFAULT_APPEARANCE.showCharacterName,
     showUserName: value?.showUserName ?? DEFAULT_APPEARANCE.showUserName,
     showTimestamp: value?.showTimestamp ?? DEFAULT_APPEARANCE.showTimestamp,
-    showSceneHeader: value?.showSceneHeader ?? DEFAULT_APPEARANCE.showSceneHeader,
     avatarLayout: value?.avatarLayout === "side" ? "side" : DEFAULT_APPEARANCE.avatarLayout,
     avatarShape: value?.avatarShape === "circle" || value?.avatarShape === "square"
       ? value.avatarShape
