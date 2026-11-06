@@ -19,7 +19,8 @@ import { StoryGuidanceModal } from "./StoryGuidanceModal";
 import { StoryTimelineModal } from "./StoryTimelineModal";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
-type PhoneApp = "messages" | "notes";
+type PhoneApp = "home" | "messages" | "contacts" | "story" | "notes" | "studio" | "settings";
+type PhoneMessageView = "list" | "chat";
 type DragTarget = "button" | "panel";
 type CharacterEditorTarget = { mode: "create" } | { mode: "edit"; id: string };
 type LorebookEditorTarget = { mode: "create" } | { mode: "edit"; id: string } | { mode: "embedded"; characterId: string };
@@ -32,6 +33,15 @@ const navItems: Array<{ id: Section; icon: string; label: string }> = [
   { id: "presets", icon: "≋", label: "预设" },
   { id: "themes", icon: "✦", label: "外观" },
   { id: "settings", icon: "⌬", label: "设置" },
+];
+
+const phoneApps: Array<{ id: Exclude<PhoneApp, "home">; icon: string; label: string; tone: string }> = [
+  { id: "messages", icon: "●●", label: "消息", tone: "green" },
+  { id: "contacts", icon: "人", label: "联系人", tone: "blue" },
+  { id: "story", icon: "⌁", label: "剧情", tone: "violet" },
+  { id: "notes", icon: "▤", label: "备忘录", tone: "gold" },
+  { id: "studio", icon: "✦", label: "创作", tone: "rose" },
+  { id: "settings", icon: "⚙", label: "设置", tone: "gray" },
 ];
 
 function CharacterOrb({ small = false, avatarDataUrl, name }: { small?: boolean; avatarDataUrl?: string; name?: string }) {
@@ -107,7 +117,8 @@ export function LunemirPrototype() {
   const [section, setSection] = useState<Section>("chat");
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [phoneOpen, setPhoneOpen] = useState(false);
-  const [phoneApp, setPhoneApp] = useState<PhoneApp>("messages");
+  const [phoneApp, setPhoneApp] = useState<PhoneApp>("home");
+  const [phoneMessageView, setPhoneMessageView] = useState<PhoneMessageView>("list");
   const [phoneDraft, setPhoneDraft] = useState("");
   const [phoneButtonPosition, setPhoneButtonPosition] = useState<{ x: number; y: number } | null>(null);
   const [phonePanelPosition, setPhonePanelPosition] = useState<{ x: number; y: number } | null>(null);
@@ -168,6 +179,7 @@ export function LunemirPrototype() {
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
   const activeConversationTitle = replaceRoleMacros(runtime.activeConversation?.title ?? "当前剧情", activeName, runtime.activePersona?.name ?? "用户");
+  const phoneStoryTime = runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? "1970-01-01T00:00:00.000Z";
   const greetingOptions = useMemo(
     () => [...new Set([
       runtime.activeCharacter?.firstMessage ?? "",
@@ -312,10 +324,20 @@ export function LunemirPrototype() {
   }
 
   useEffect(() => {
-    if (!phoneOpen || phoneApp !== "messages") return;
+    if (!phoneOpen || phoneApp !== "messages" || phoneMessageView !== "chat") return;
     const messageList = phoneMessageListRef.current;
     if (messageList) messageList.scrollTop = messageList.scrollHeight;
-  }, [runtime.storyEvents.length, phoneOpen, phoneApp]);
+  }, [runtime.storyEvents.length, phoneOpen, phoneApp, phoneMessageView]);
+
+  function openPhoneApp(app: Exclude<PhoneApp, "home">) {
+    setPhoneApp(app);
+    if (app === "messages") setPhoneMessageView("list");
+  }
+
+  function openMainSectionFromPhone(nextSection: Section) {
+    setPhoneOpen(false);
+    navigateTo(nextSection);
+  }
 
   function beginPhoneDrag(event: ReactPointerEvent<HTMLElement>, target: DragTarget) {
     if (event.button !== 0) return;
@@ -815,7 +837,6 @@ export function LunemirPrototype() {
           if (suppressPhoneClickRef.current) { suppressPhoneClickRef.current = false; return; }
           const nextOpen = !phoneOpen;
           setPhoneOpen(nextOpen);
-          if (nextOpen && phoneApp === "messages") void runtime.markPhoneEventsRead();
         }}
         aria-label="打开或拖动悬浮小手机"
       >
@@ -828,33 +849,113 @@ export function LunemirPrototype() {
         aria-label="Lunemir 悬浮小手机"
         aria-hidden={!phoneOpen}
       >
-        <div className="phone-frame">
-          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><i /><span>◒</span></div>
-          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{runtime.activeConversation ? activeConversationTitle : `${activeName} · 本地会话`}</span></div>
-          <div className="phone-apps">
-            {(["messages", "notes"] as PhoneApp[]).map((app) => {
-              const data = { messages: ["✦", "消息"], notes: ["⌑", "备忘"] }[app];
-              return <button key={app} onClick={() => { setPhoneApp(app); if (app === "messages") void runtime.markPhoneEventsRead(); }} className={phoneApp === app ? "is-active" : ""}><i>{data[0]}</i><span>{data[1]}{app === "messages" && runtime.unreadPhoneEvents > 0 ? ` · ${runtime.unreadPhoneEvents}` : ""}</span></button>;
-            })}
+        <div className={`phone-frame phone-screen-${phoneApp}`}>
+          <div
+            className="phone-wallpaper"
+            style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}
+          />
+          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机">
+            <span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
+            <i className="phone-island" />
+            <span className="phone-signals">▮▮▮ ◉ 87</span>
           </div>
-          <div className="phone-content">
-            {phoneApp === "messages" && <div className="phone-chat">
-              <div className="phone-chat-heading"><span><strong>{activeName}</strong><small>{runtime.phoneEventStatus === "checking" ? "正在检查剧情事件…" : runtime.phoneEventMessage || "与主剧情共享记录"}</small></span><button disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()}>{runtime.phoneEventStatus === "checking" ? "…" : "检查新消息"}</button></div>
-              <div className="phone-message-list" ref={phoneMessageListRef}>
-                {phoneMessages.map((event) => {
-                  const incoming = event.eventType === "phone_message_received";
-                  return <article className={incoming ? "phone-message incoming" : "phone-message outgoing"} key={event.id}><span>{event.content}</span><time>{new Date(event.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{incoming && event.readAt ? " · 已读" : ""}</time></article>;
-                })}
-                {phoneMessages.length === 0 && <p className="phone-caption">还没有手机通信。推进剧情时间或完成一轮主剧情后，系统会按角色主动性与冷却规则检查一次。</p>}
-              </div>
-              <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content) return; setPhoneDraft(""); void runtime.sendPhoneMessage(content); }}>
-                <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder={`回复 ${activeName}…`} maxLength={600} />
-                <button type="submit" disabled={!phoneDraft.trim()} aria-label="发送手机消息">↑</button>
-              </form>
-            </div>}
-            {phoneApp === "notes" && <><h3>剧情备忘</h3>{(runtime.activeConversation?.checkpoints ?? []).map((checkpoint) => <div className="note-card" key={checkpoint.id}><strong>{checkpoint.label}</strong><p>{new Date(checkpoint.createdAt).toLocaleString("zh-CN")}</p></div>)}{approvedMemories.map((memory) => <div className="note-card" key={memory.id}><strong>长期记忆</strong><p>{memory.content}</p></div>)}{(runtime.activeConversation?.checkpoints?.length ?? 0) === 0 && approvedMemories.length === 0 && <p className="phone-caption">在会话管理中创建章节点，或确认一条长期记忆。</p>}</>}
-          </div>
-          <button className="phone-home" onClick={() => setPhoneOpen(false)} aria-label="关闭手机" />
+          <button className="phone-close" type="button" onClick={() => setPhoneOpen(false)} aria-label="关闭手机">×</button>
+
+          {phoneApp === "home" ? <div className="phone-desktop">
+            <header className="phone-home-hero">
+              <em>Lunemir Phone</em>
+              <small>{new Date(phoneStoryTime).toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "long" })}</small>
+              <strong>{new Date(phoneStoryTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</strong>
+              <span>{runtime.storyState?.weather || "Lunemir 世界线"} · {runtime.storyState?.location || activeConversationTitle}</span>
+            </header>
+            <div className="phone-app-grid">
+              {phoneApps.map((app) => <button type="button" key={app.id} onClick={() => openPhoneApp(app.id)}>
+                <i className={`phone-app-icon ${app.tone}`}>{app.icon}</i>
+                <span>{app.label}</span>
+                {app.id === "messages" && runtime.unreadPhoneEvents > 0 ? <b>{runtime.unreadPhoneEvents}</b> : null}
+              </button>)}
+            </div>
+            <div className="phone-dock">
+              {phoneApps.filter((app) => ["messages", "story", "studio", "settings"].includes(app.id)).map((app) => <button type="button" key={app.id} onClick={() => openPhoneApp(app.id)} aria-label={app.label}><i className={`phone-app-icon ${app.tone}`}>{app.icon}</i>{app.id === "messages" && runtime.unreadPhoneEvents > 0 ? <b>{runtime.unreadPhoneEvents}</b> : null}</button>)}
+            </div>
+          </div> : <div className="phone-app-view">
+            <header className="phone-app-header">
+              <button type="button" onClick={() => { if (phoneApp === "messages" && phoneMessageView === "chat") setPhoneMessageView("list"); else setPhoneApp("home"); }} aria-label="返回">‹</button>
+              <strong>{phoneApp === "messages" && phoneMessageView === "chat" ? activeName : phoneApps.find((app) => app.id === phoneApp)?.label}</strong>
+              {phoneApp === "messages" && phoneMessageView === "list" ? <button type="button" disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()} aria-label="检查新消息">{runtime.phoneEventStatus === "checking" ? "…" : "+"}</button> : <span />}
+            </header>
+            <div className="phone-content">
+              {phoneApp === "messages" && phoneMessageView === "list" ? <div className="phone-conversation-list">
+                <label className="phone-search"><span>⌕</span><input readOnly placeholder="搜索" aria-label="搜索消息（即将支持）" /></label>
+                <button className="phone-conversation" type="button" onClick={() => { setPhoneMessageView("chat"); void runtime.markPhoneEventsRead(); }}>
+                  <span className="phone-avatar" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span>
+                  <span><strong>{activeName}</strong><small>{phoneMessages[phoneMessages.length - 1]?.content || "故事里的消息会同步到这里"}</small></span>
+                  <time>{phoneMessages.length > 0 ? new Date(phoneMessages[phoneMessages.length - 1].storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" }) : ""}</time>
+                  {runtime.unreadPhoneEvents > 0 ? <b>{runtime.unreadPhoneEvents}</b> : null}
+                </button>
+                <p className="phone-system-note">主剧情和手机共用同一条时间线。这里的回复会作为正式事件进入下一轮剧情。</p>
+              </div> : null}
+
+              {phoneApp === "messages" && phoneMessageView === "chat" ? <div className="phone-chat">
+                <div className="phone-message-list" ref={phoneMessageListRef}>
+                  {phoneMessages.map((event) => {
+                    const incoming = event.eventType === "phone_message_received";
+                    return <article className={incoming ? "phone-message incoming" : "phone-message outgoing"} key={event.id}>
+                      {incoming ? <span className="phone-bubble-avatar" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span> : null}
+                      <span className="phone-message-bubble">{event.content}</span>
+                      <time>{new Date(event.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{incoming && event.readAt ? " · 已读" : ""}</time>
+                    </article>;
+                  })}
+                  {phoneMessages.length === 0 ? <p className="phone-caption">还没有手机通信。点击右上角“+”或推进剧情时间，系统会按角色主动性与冷却规则检查一次。</p> : null}
+                </div>
+                <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content) return; setPhoneDraft(""); void runtime.sendPhoneMessage(content); }}>
+                  <button type="button" aria-label="语音功能待接入">◉</button>
+                  <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder="发送消息" aria-label={`回复 ${activeName}`} maxLength={600} />
+                  <button className="phone-send" type="submit" disabled={!phoneDraft.trim()}>发送</button>
+                </form>
+              </div> : null}
+
+              {phoneApp === "contacts" ? <div className="phone-contact-page">
+                <button className="phone-contact-card" type="button" onClick={() => { setPhoneApp("messages"); setPhoneMessageView("chat"); void runtime.markPhoneEventsRead(); }}>
+                  <span className="phone-avatar large" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>{runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0)}</span>
+                  <span><strong>{activeName}</strong><small>{runtime.activeCharacter?.description || "当前剧情角色"}</small></span><i>›</i>
+                </button>
+                <h4>当前使用者</h4>
+                <button className="phone-contact-card" type="button" onClick={() => { setPhoneOpen(false); setPersonaOpen(true); }}>
+                  <span className="phone-avatar large persona" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "我").charAt(0)}</span>
+                  <span><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>点击编辑或切换人设</small></span><i>›</i>
+                </button>
+              </div> : null}
+
+              {phoneApp === "story" ? <div className="phone-story-page">
+                <section className="phone-story-card"><small>CURRENT STORY</small><strong>{activeConversationTitle}</strong><p>{runtime.storyState?.scene || "故事状态会随主剧情同步更新。"}</p></section>
+                <dl><div><dt>剧情时间</dt><dd>{new Date(phoneStoryTime).toLocaleString("zh-CN", { month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" })}</dd></div><div><dt>地点</dt><dd>{runtime.storyState?.location || "未设置"}</dd></div><div><dt>天气</dt><dd>{runtime.storyState?.weather || "未设置"}</dd></div><div><dt>正式事件</dt><dd>{runtime.storyEvents.filter((event) => event.status === "committed").length}</dd></div></dl>
+                <button className="phone-primary-action" type="button" onClick={() => { setPhoneOpen(false); setStoryTimelineOpen(true); }}>打开剧情时间线</button>
+              </div> : null}
+
+              {phoneApp === "notes" ? <div className="phone-notes-page"><h3>剧情备忘</h3>{(runtime.activeConversation?.checkpoints ?? []).map((checkpoint) => <div className="note-card" key={checkpoint.id}><strong>{checkpoint.label}</strong><p>{new Date(checkpoint.createdAt).toLocaleString("zh-CN")}</p></div>)}{approvedMemories.map((memory) => <div className="note-card" key={memory.id}><strong>长期记忆</strong><p>{memory.content}</p></div>)}{(runtime.activeConversation?.checkpoints?.length ?? 0) === 0 && approvedMemories.length === 0 ? <p className="phone-caption">在会话管理中创建章节点，或确认一条长期记忆。</p> : null}</div> : null}
+
+              {phoneApp === "studio" ? <div className="phone-studio-page">
+                <section className="phone-api-card"><span className={runtime.connectionStatus === "connected" ? "is-connected" : ""}>{runtime.connectionStatus === "connected" ? "已连接" : "未连接"}</span><small>LANGUAGE API</small><strong>{runtime.modelConfig.model || "尚未选择模型"}</strong><p>{runtime.modelConfig.baseUrl || "先在设置中填写兼容接口地址。"}</p><button type="button" onClick={() => openMainSectionFromPhone("settings")}>配置接口</button></section>
+                <div className="phone-studio-heading"><span><strong>对话预设</strong><small>切换会立即影响主剧情与手机消息</small></span><button type="button" onClick={() => openMainSectionFromPhone("presets")}>管理</button></div>
+                <div className="phone-preset-list">{runtime.presets.map((preset) => <button type="button" className={runtime.activePreset?.id === preset.id ? "is-active" : ""} key={preset.id} onClick={() => void runtime.activatePreset(preset.id)}><span><strong>{preset.name}</strong><small>{preset.modules?.filter((module) => module.enabled).length ?? 0} 个启用模块</small></span><i>{runtime.activePreset?.id === preset.id ? "✓" : ""}</i></button>)}{runtime.presets.length === 0 ? <p className="phone-caption">还没有预设，可从主界面的预设库创建或导入。</p> : null}</div>
+                <section className="phone-image-card"><span>IMAGE STUDIO</span><strong>生图工作室</strong><p>这里将单独保存生图接口、尺寸、风格词和负面词预设。当前版本先完成入口与信息架构，不会用假图片冒充生成结果。</p><button type="button" onClick={() => openMainSectionFromPhone("settings")}>准备生图接口</button></section>
+              </div> : null}
+
+              {phoneApp === "settings" ? <div className="phone-settings-page">
+                <section className="phone-profile-card"><span className="phone-avatar large persona" style={runtime.activePersona?.avatarDataUrl ? { backgroundImage: `url(${runtime.activePersona.avatarDataUrl})` } : undefined}>{runtime.activePersona?.avatarDataUrl ? "" : (runtime.activePersona?.name ?? "我").charAt(0)}</span><span><strong>{runtime.activePersona?.name ?? "旅行者"}</strong><small>Lunemir 本地档案</small></span></section>
+                <div className="phone-setting-group">
+                  <button type="button" onClick={() => openMainSectionFromPhone("themes")}><span><i className="violet">✦</i>界面与毛玻璃</span><b>›</b></button>
+                  <button type="button" onClick={() => openMainSectionFromPhone("presets")}><span><i className="blue">≋</i>对话预设</span><b>{runtime.activePreset?.name || "未选择"} ›</b></button>
+                  <button type="button" onClick={() => openMainSectionFromPhone("settings")}><span><i className="gray">⌁</i>模型与 API</span><b>{runtime.modelConfig.model || "未配置"} ›</b></button>
+                </div>
+                <div className="phone-setting-group"><button type="button" onClick={() => setPhoneApp("story")}><span><i className="gold">◷</i>剧情状态</span><b>›</b></button><button type="button" onClick={() => setPhoneApp("contacts")}><span><i className="green">人</i>角色与人设</span><b>›</b></button></div>
+                <p className="phone-privacy-note">角色、剧情、预设和手机记录默认保存在当前设备。API Key 不会显示在手机桌面。</p>
+              </div> : null}
+            </div>
+          </div>}
+
+          <button className="phone-home" type="button" onClick={() => { if (phoneApp === "home") setPhoneOpen(false); else { setPhoneApp("home"); setPhoneMessageView("list"); } }} aria-label={phoneApp === "home" ? "关闭手机" : "回到手机桌面"} />
         </div>
       </section>
 

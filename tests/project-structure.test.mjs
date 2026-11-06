@@ -429,3 +429,19 @@ test("resolves persona macros and supports portrait-above-text appearance", asyn
   assert.match(styles, /text-indent:2em/);
   assert.match(styles, /bottom:calc\(100% \+ 5px\)/);
 });
+
+test("ships an iOS-inspired phone shell with real story-linked apps", async () => {
+  const [prototype, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(prototype, /type PhoneApp = "home" \| "messages" \| "contacts" \| "story" \| "notes" \| "studio" \| "settings"/);
+  assert.match(prototype, /主剧情和手机共用同一条时间线/);
+  assert.match(prototype, /runtime\.sendPhoneMessage/);
+  assert.match(prototype, /runtime\.activatePreset/);
+  assert.match(prototype, /生图工作室/);
+  assert.match(prototype, /不会用假图片冒充生成结果/);
+  assert.match(styles, /Lunemir Phone OS/);
+  assert.match(styles, /phone-conversation-list/);
+  assert.match(styles, /\.phone-shell\{inset:0!important;width:100%!important;height:100dvh!important/);
+});
