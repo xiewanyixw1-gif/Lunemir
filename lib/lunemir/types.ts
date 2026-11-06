@@ -293,6 +293,7 @@ export type AppearanceSettings = {
   showCharacterName: boolean;
   showUserName: boolean;
   showTimestamp: boolean;
+  avatarLayout: "side" | "header";
   avatarShape: "circle" | "square" | "rounded";
   avatarSize: number;
   avatarGap: number;

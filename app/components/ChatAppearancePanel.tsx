@@ -106,12 +106,32 @@ export function ChatAppearancePanel({
     onSave({ ...value, [field]: next });
   };
   const rangeProps = { value, onPreview, onSave };
+  const applyRoleScreen = () => onSave({
+    ...value,
+    backgroundMode: "character",
+    readingStyle: "cinematic",
+    messageStyle: "novel-flow",
+    glassScope: "chrome-only",
+    glassMode: "full",
+    backgroundBrightness: 72,
+    backgroundOverlay: 46,
+    backgroundVignette: 58,
+    avatarLayout: "header",
+    showCharacterAvatar: true,
+    showUserAvatar: false,
+    showCharacterName: true,
+    showUserName: true,
+    showTimestamp: false,
+    fontFamily: "serif",
+    fontSize: 18,
+    lineHeight: 1.95,
+  });
 
   return (
     <div className="appearance-workspace">
       <div className="view-heading appearance-heading">
         <div><span className="eyebrow">CHAT APPEARANCE</span><h2>Moon Glass 外观</h2><p className="view-description">所有选项都会真实应用到聊天并保存在当前设备。返回聊天即可查看完整效果。</p></div>
-        <div className="appearance-heading-actions"><span className="subtle-label">实时预览 · 自动保存</span><button type="button" onClick={() => onSave(DEFAULT_APPEARANCE)}>恢复默认</button></div>
+        <div className="appearance-heading-actions"><span className="subtle-label">实时预览 · 自动保存</span><button type="button" onClick={applyRoleScreen}>应用角色映幕</button><button type="button" onClick={() => onSave(DEFAULT_APPEARANCE)}>恢复默认</button></div>
       </div>
 
       <GlassPanel as="section" className="appearance-section">
@@ -146,6 +166,7 @@ export function ChatAppearancePanel({
           <ChoiceGroup label="阅读风格" value={value.readingStyle} options={[{ value: "cinematic", label: "电影感" }, { value: "editorial", label: "编辑部" }, { value: "reader-glass", label: "阅读玻璃" }]} onChange={(next) => savePatch("readingStyle", next)} />
           <ChoiceGroup label="消息样式" value={value.messageStyle} options={[{ value: "bubble", label: "轻气泡" }, { value: "soft-card", label: "玻璃卡片" }, { value: "novel-flow", label: "小说流" }]} onChange={(next) => savePatch("messageStyle", next)} />
         </div>
+        <ChoiceGroup label="头像与正文位置" value={value.avatarLayout} options={[{ value: "header", label: "头像在上" }, { value: "side", label: "头像侧边" }]} onChange={(next) => savePatch("avatarLayout", next)} />
         <div className="appearance-ranges four">
           <RangeControl {...rangeProps} label="正文字号" field="fontSize" min={14} max={24} suffix="px" />
           <RangeControl {...rangeProps} label="正文粗细" field="fontWeight" min={300} max={700} step={100} />
@@ -176,7 +197,7 @@ export function ChatAppearancePanel({
       </GlassPanel>
 
       <GlassPanel as="section" className="appearance-section">
-        <header><div><span className="eyebrow">AVATARS</span><h3>头像</h3></div></header>
+        <header><div><span className="eyebrow">AVATARS</span><h3>头像</h3></div><small className="appearance-section-note">角色与用户头像都可以独立关闭</small></header>
         <div className="appearance-grid two">
           <div className="appearance-toggles">
             <button type="button" className={value.showCharacterAvatar ? "is-active" : ""} onClick={() => savePatch("showCharacterAvatar", !value.showCharacterAvatar)}>角色头像</button>

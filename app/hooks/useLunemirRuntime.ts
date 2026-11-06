@@ -6,6 +6,7 @@ import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
 import { generateChatCompletion, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
+import { replaceRoleMacros } from "../../lib/lunemir/macros";
 import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import { createDefaultStoryState, createStoryEvent, isDuplicatePhoneEvent, normalizeStoryState, parsePhoneMessageProposal } from "../../lib/lunemir/story-events";
 import {
@@ -67,14 +68,14 @@ function initialMessage(character: CharacterRecord, greeting = character.firstMe
 
 async function createConversationRecord(
   character: CharacterRecord,
-  options: { title?: string; messages?: StoredMessage[]; parentConversationId?: string; branchedFromMessageId?: string } = {},
+  options: { title?: string; messages?: StoredMessage[]; parentConversationId?: string; branchedFromMessageId?: string; personaName?: string } = {},
 ) {
   const now = new Date().toISOString();
   const conversation: ConversationRecord = {
     id: createId("conversation"),
     schemaVersion: 1,
     characterId: character.id,
-    title: options.title || character.firstMessage.slice(0, 28) || `与 ${character.name} 的对话`,
+    title: options.title || replaceRoleMacros(character.firstMessage, character.name, options.personaName).slice(0, 28) || `与 ${character.name} 的对话`,
     messages: options.messages ?? initialMessage(character),
     parentConversationId: options.parentConversationId,
     branchedFromMessageId: options.branchedFromMessageId,
@@ -145,6 +146,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     showCharacterName: value?.showCharacterName ?? DEFAULT_APPEARANCE.showCharacterName,
     showUserName: value?.showUserName ?? DEFAULT_APPEARANCE.showUserName,
     showTimestamp: value?.showTimestamp ?? DEFAULT_APPEARANCE.showTimestamp,
+    avatarLayout: value?.avatarLayout === "side" ? "side" : DEFAULT_APPEARANCE.avatarLayout,
     avatarShape: value?.avatarShape === "circle" || value?.avatarShape === "square"
       ? value.avatarShape
       : DEFAULT_APPEARANCE.avatarShape,
@@ -246,10 +248,11 @@ export function useLunemirRuntime() {
       .filter((lorebook) => assigned.has(lorebook.id))
       .flatMap((lorebook) => lorebook.entries);
     const settings = await getSettings();
+    const fallbackPersona = personaLibraryRef.current.find((persona) => persona.id === settings.activePersonaId) ?? personaLibraryRef.current[0];
     let characterConversations = (await listConversations(character.id))
       .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     if (characterConversations.length === 0) {
-      characterConversations = [await createConversationRecord(character)];
+      characterConversations = [await createConversationRecord(character, { personaName: fallbackPersona?.name })];
     }
     let nextConversation = characterConversations.find((item) => item.id === settings.activeConversationIds?.[character.id])
       ?? characterConversations[0];
@@ -260,7 +263,7 @@ export function useLunemirRuntime() {
     ) {
       nextConversation = {
         ...nextConversation,
-        title: nextConversation.title === "新的故事" ? character.firstMessage.slice(0, 28) : nextConversation.title,
+        title: nextConversation.title === "新的故事" ? replaceRoleMacros(character.firstMessage, character.name, fallbackPersona?.name).slice(0, 28) : nextConversation.title,
         messages: initialMessage(character),
         updatedAt: new Date().toISOString(),
       };
@@ -615,7 +618,7 @@ export function useLunemirRuntime() {
   async function createNewConversation() {
     const character = activeCharacter;
     if (!character || streaming) return;
-    const nextConversation = await createConversationRecord(character, { title: `新会话 · ${conversations.length + 1}` });
+    const nextConversation = await createConversationRecord(character, { title: `新会话 · ${conversations.length + 1}`, personaName: activePersona?.name });
     setConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);
   }
@@ -642,7 +645,7 @@ export function useLunemirRuntime() {
     if (conversation && canReplaceCurrentOpening) {
       const nextConversation: ConversationRecord = {
         ...conversation,
-        title: content.slice(0, 28) || `与 ${character.name} 的对话`,
+        title: replaceRoleMacros(content, character.name, activePersona?.name).slice(0, 28) || `与 ${character.name} 的对话`,
         messages: openingMessages,
         updatedAt: new Date().toISOString(),
       };
@@ -655,8 +658,9 @@ export function useLunemirRuntime() {
     }
 
     const nextConversation = await createConversationRecord(character, {
-      title: content.slice(0, 28) || `与 ${character.name} 的对话`,
+      title: replaceRoleMacros(content, character.name, activePersona?.name).slice(0, 28) || `与 ${character.name} 的对话`,
       messages: openingMessages,
+      personaName: activePersona?.name,
     });
     setConversations((current) => [nextConversation, ...current]);
     await activateConversationRecord(nextConversation);

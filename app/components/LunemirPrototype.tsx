@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
+import { replaceRoleMacros } from "../../lib/lunemir/macros";
 import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
 import { CharacterEditorModal } from "./CharacterEditorModal";
@@ -166,6 +167,7 @@ export function LunemirPrototype() {
   }
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
+  const activeConversationTitle = replaceRoleMacros(runtime.activeConversation?.title ?? "当前剧情", activeName, runtime.activePersona?.name ?? "用户");
   const greetingOptions = useMemo(
     () => [...new Set([
       runtime.activeCharacter?.firstMessage ?? "",
@@ -398,6 +400,7 @@ export function LunemirPrototype() {
       data-message-style={runtime.appearance.messageStyle}
       data-reading-style={runtime.appearance.readingStyle}
       data-avatar-shape={runtime.appearance.avatarShape}
+      data-avatar-layout={runtime.appearance.avatarLayout}
       data-font-family={runtime.appearance.fontFamily}
       data-has-background={activeBackground ? "true" : "false"}
       data-section={section}
@@ -419,7 +422,7 @@ export function LunemirPrototype() {
       <GlassPanel as="aside" className={navigationOpen ? "navigation-drawer is-open" : "navigation-drawer"} aria-label="Lunemir 主菜单" aria-hidden={!navigationOpen}>
         <div className="navigation-drawer-heading">
           <CharacterOrb avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} />
-          <div><span className="eyebrow">CURRENT STORY</span><strong>{activeName}</strong><small>{runtime.activeConversation?.title ?? "当前剧情"}</small></div>
+          <div><span className="eyebrow">CURRENT STORY</span><strong>{activeName}</strong><small>{activeConversationTitle}</small></div>
           <button type="button" onClick={() => setNavigationOpen(false)} aria-label="关闭主菜单" tabIndex={navigationOpen ? 0 : -1}>×</button>
         </div>
         <nav className="navigation-drawer-list" aria-label="功能页面">
@@ -458,7 +461,7 @@ export function LunemirPrototype() {
             </button>
             {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
             <div>
-              <p>{section === "chat" ? runtime.activeConversation?.title ?? "当前剧情" : "LUNEMIR"}</p>
+              <p>{section === "chat" ? activeConversationTitle : "LUNEMIR"}</p>
               <h1>{section === "chat" ? activeName : pageTitle}</h1>
             </div>
           </div>
@@ -499,6 +502,7 @@ export function LunemirPrototype() {
                 const showAvatar = isUser ? runtime.appearance.showUserAvatar : runtime.appearance.showCharacterAvatar;
                 const showName = isUser ? runtime.appearance.showUserName : runtime.appearance.showCharacterName;
                 const avatar = isUser ? runtime.activePersona?.avatarDataUrl : runtime.activeCharacter?.avatarDataUrl;
+                const displayContent = replaceRoleMacros(message.content, activeName, runtime.activePersona?.name ?? "用户");
                 const previousMessage = runtime.messages[index - 1];
                 const showDay = !previousMessage || messageDayLabel(previousMessage.createdAt) !== messageDayLabel(message.createdAt);
                 return (
@@ -526,8 +530,8 @@ export function LunemirPrototype() {
                               <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
                             </div>
                           ) : message.role === "assistant" && activeOutputRenderer?.enabled ? (
-                            <SafeMessageContent source={message.content} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
-                          ) : <p>{message.content}</p>}
+                            <SafeMessageContent source={displayContent} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
+                          ) : <p>{displayContent}</p>}
                           {!runtime.streaming && editingMessageId !== message.id && (
                             <details className="message-tools">
                               <summary aria-label="打开消息操作">•••</summary>
@@ -821,7 +825,7 @@ export function LunemirPrototype() {
       >
         <div className="phone-frame">
           <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><i /><span>◒</span></div>
-          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{runtime.activeConversation?.title ?? `${activeName} · 本地会话`}</span></div>
+          <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{runtime.activeConversation ? activeConversationTitle : `${activeName} · 本地会话`}</span></div>
           <div className="phone-apps">
             {(["messages", "notes"] as PhoneApp[]).map((app) => {
               const data = { messages: ["✦", "消息"], notes: ["⌑", "备忘"] }[app];
@@ -857,7 +861,7 @@ export function LunemirPrototype() {
             <h2 id="session-title">会话、章节与记忆</h2>
             <p className="session-intro">会话彼此独立；剧情分支会保留分支点之前的消息。只有确认后的记忆会进入模型上下文。</p>
             <div className="session-overview">
-              <div><span>当前故事</span><strong>{runtime.activeConversation?.title ?? "尚未开始"}</strong><small>{activeName} × {runtime.activePersona?.name ?? "旅行者"}</small></div>
+              <div><span>当前故事</span><strong>{runtime.activeConversation ? activeConversationTitle : "尚未开始"}</strong><small>{activeName} × {runtime.activePersona?.name ?? "旅行者"}</small></div>
               <dl><div><dt>消息</dt><dd>{runtime.messages.length}</dd></div><div><dt>章节点</dt><dd>{runtime.activeConversation?.checkpoints?.length ?? 0}</dd></div><div><dt>长期记忆</dt><dd>{approvedMemories.length}</dd></div></dl>
             </div>
             <div className="session-toolbar">
@@ -949,6 +953,7 @@ export function LunemirPrototype() {
       {greetingPickerOpen && runtime.activeCharacter && greetingOptions.length > 0 ? (
         <GreetingPickerModal
           character={runtime.activeCharacter}
+          personaName={runtime.activePersona?.name}
           currentGreeting={currentOpeningGreeting}
           createsNewConversation={greetingCreatesNewConversation}
           onClose={() => setGreetingPickerOpen(false)}
@@ -1046,7 +1051,7 @@ export function LunemirPrototype() {
         <PersonaManagerModal
           personas={runtime.personas}
           activePersonaId={runtime.activePersona?.id ?? ""}
-          storyLabel={runtime.activeConversation?.title ?? "当前剧情"}
+          storyLabel={activeConversationTitle}
           onClose={() => setPersonaOpen(false)}
           onSave={runtime.savePersonaProfile}
           onActivate={runtime.activatePersona}

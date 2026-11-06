@@ -13,6 +13,7 @@ import type {
   StoryState,
   StorySummary,
 } from "./types";
+import { replaceRoleMacros } from "./macros";
 
 export type ContextOptions = {
   persona?: PersonaRecord | null;
@@ -120,19 +121,17 @@ export function compileContext(
 ): CompiledContext {
   const persona = options.persona;
   const preset = options.preset;
-  const replaceMacros = (value: string) => value
-    .replaceAll(/{{char}}/gi, character.name)
-    .replaceAll(/{{user}}/gi, persona?.name || "用户");
+  const replaceMacros = (value: string) => replaceRoleMacros(value, character.name, persona?.name || "用户");
   const phoneEvents = (options.storyEvents ?? [])
     .filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent"))
     .slice(-12);
   const phoneText = phoneEvents.map((event) => {
     const sender = event.actorId === character.id ? character.name : persona?.name || "用户";
     const receiver = event.targetId === character.id ? character.name : persona?.name || "用户";
-    return `[${new Date(event.storyTime).toLocaleString("zh-CN")} · 手机] ${sender} → ${receiver}：${event.content}`;
+    return `[${new Date(event.storyTime).toLocaleString("zh-CN")} · 手机] ${sender} → ${receiver}：${replaceMacros(event.content)}`;
   }).join("\n");
   const allLoreEntries = [...character.lorebookEntries, ...(options.externalLoreEntries ?? [])];
-  const matchedLore = matchesLore(allLoreEntries, messages.map((message) => message.content), phoneText);
+  const matchedLore = matchesLore(allLoreEntries, messages.map((message) => replaceMacros(message.content)), phoneText);
   const characterDefinition = [
     `你正在扮演 ${character.name}。`,
     character.description,
@@ -157,9 +156,9 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
-  const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${content}`).join("\n\n");
-  const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${memory}`).join("\n");
-  const summaryText = options.storySummary?.status === "confirmed" ? options.storySummary.content.trim() : "";
+  const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
+  const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
+  const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";
   const authorNoteActive = Boolean(
     options.authorNote?.enabled
     && options.authorNote.content.trim()
@@ -185,7 +184,7 @@ export function compileContext(
     .slice(coveredMessageCount)
     .filter((message) => message.content.trim())
     .slice(-40);
-  const historyText = historySource.map((message) => message.content).join("\n");
+  const historyText = historySource.map((message) => replaceMacros(message.content)).join("\n");
 
   const segments: ContextSegment[] = [
     {
@@ -250,7 +249,7 @@ export function compileContext(
     },
   ];
 
-  const historyMessages: ModelMessage[] = historySource.map((message) => ({ role: message.role, content: message.content }));
+  const historyMessages: ModelMessage[] = historySource.map((message) => ({ role: message.role, content: replaceMacros(message.content) }));
   if (authorNoteText && options.authorNote?.position === "in_history") {
     const insertionIndex = Math.max(0, historyMessages.length - Math.max(0, options.authorNote.depth));
     historyMessages.splice(insertionIndex, 0, { role: "system", content: `作者注释：\n${authorNoteText}` });

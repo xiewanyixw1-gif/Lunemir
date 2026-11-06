@@ -36,6 +36,7 @@ export const DEFAULT_APPEARANCE: AppearanceSettings = {
   showCharacterName: true,
   showUserName: true,
   showTimestamp: false,
+  avatarLayout: "header",
   avatarShape: "rounded",
   avatarSize: 38,
   avatarGap: 12,

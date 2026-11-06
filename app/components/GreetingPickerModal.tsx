@@ -1,17 +1,19 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { replaceRoleMacros } from "../../lib/lunemir/macros";
 import type { CharacterRecord } from "../../lib/lunemir/types";
 
 type Props = {
   character: CharacterRecord;
+  personaName?: string;
   currentGreeting?: string;
   createsNewConversation: boolean;
   onClose: () => void;
   onApply: (greeting: string) => Promise<void> | void;
 };
 
-export function GreetingPickerModal({ character, currentGreeting, createsNewConversation, onClose, onApply }: Props) {
+export function GreetingPickerModal({ character, personaName, currentGreeting, createsNewConversation, onClose, onApply }: Props) {
   const greetings = useMemo(
     () => [...new Set([character.firstMessage, ...character.alternateGreetings].map((greeting) => greeting.trim()).filter(Boolean))],
     [character.alternateGreetings, character.firstMessage],
@@ -48,7 +50,7 @@ export function GreetingPickerModal({ character, currentGreeting, createsNewConv
             return (
               <button key={`${index}-${greeting.slice(0, 24)}`} type="button" className={selected ? "greeting-option is-selected" : "greeting-option"} role="radio" aria-checked={selected} onClick={() => setSelectedGreeting(greeting)}>
                 <span className="greeting-option-index">{index === 0 ? "默认" : `备选 ${index}`}</span>
-                <p>{greeting}</p>
+                <p>{replaceRoleMacros(greeting, character.nickname || character.name, personaName)}</p>
                 <em>{selected ? "已选择" : "选择"}</em>
               </button>
             );

@@ -394,3 +394,26 @@ test("persists one story clock and drives bounded NPC initiative checks", async 
   assert.match(prototype, /剧情时间与事件/);
   assert.match(styles, /story-timeline-layout/);
 });
+
+test("resolves persona macros and supports portrait-above-text appearance", async () => {
+  const [macros, context, runtime, prototype, picker, appearance, defaults, styles] = await Promise.all([
+    readFile(new URL("lib/lunemir/macros.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/GreetingPickerModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/ChatAppearancePanel.tsx", root), "utf8"),
+    readFile(new URL("lib/lunemir/defaults.ts", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(macros, /PERSONA_MACRO/);
+  assert.match(macros, /user_name/);
+  assert.match(context, /replaceMacros\(message\.content\)/);
+  assert.match(runtime, /replaceRoleMacros\(content/);
+  assert.match(prototype, /displayContent/);
+  assert.match(picker, /replaceRoleMacros\(greeting/);
+  assert.match(appearance, /应用角色映幕/);
+  assert.match(appearance, /头像在上/);
+  assert.match(defaults, /avatarLayout: "header"/);
+  assert.match(styles, /data-avatar-layout="header"/);
+});
