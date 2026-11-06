@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import type { PersonaEditorValues, PersonaRecord } from "../../lib/lunemir/types";
 
@@ -110,6 +110,7 @@ function PersonaForm({ persona, isActive, onSave, onActivate, onDuplicate, onDel
 
   return (
     <form className="persona-editor-form" onSubmit={submit}>
+      {isActive ? <div className="persona-active-note"><i />当前剧情正在使用这个人设；保存修改后会立即进入后续上下文。</div> : null}
       <div className="persona-editor-profile">
         <div className="avatar-editor">
           <span style={values.avatarDataUrl ? { backgroundImage: `url(${values.avatarDataUrl})` } : undefined}>{values.avatarDataUrl ? "" : values.name.trim().charAt(0) || "◇"}</span>
@@ -124,14 +125,23 @@ function PersonaForm({ persona, isActive, onSave, onActivate, onDuplicate, onDel
         </div>
       </div>
 
-      <div className="persona-editor-grid">
-        <label className="wide"><span>人设摘要</span><textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={3} placeholder="最重要的整体设定和互动边界…" /></label>
-        <label><span>外貌</span><textarea value={values.appearance} onChange={(event) => update("appearance", event.target.value)} rows={4} /></label>
-        <label><span>性格</span><textarea value={values.personality} onChange={(event) => update("personality", event.target.value)} rows={4} /></label>
-        <label className="wide"><span>背景经历</span><textarea value={values.background} onChange={(event) => update("background", event.target.value)} rows={4} /></label>
-        <label className="wide"><span>与其他角色的关系</span><textarea value={values.relationships} onChange={(event) => update("relationships", event.target.value)} rows={3} /></label>
-        <label className="wide"><span>专属设定</span><textarea value={values.notes} onChange={(event) => update("notes", event.target.value)} rows={3} placeholder="称呼、行为边界、希望模型长期遵守的设定…" /></label>
-      </div>
+      <section className="persona-form-section">
+        <header><strong>角色如何看见你</strong><small>这些内容决定互动中的外貌、性格和边界。</small></header>
+        <div className="persona-editor-grid">
+          <label className="wide"><span>人设摘要</span><textarea value={values.description} onChange={(event) => update("description", event.target.value)} rows={3} placeholder="最重要的整体设定和互动边界…" /></label>
+          <label><span>外貌</span><textarea value={values.appearance} onChange={(event) => update("appearance", event.target.value)} rows={4} /></label>
+          <label><span>性格</span><textarea value={values.personality} onChange={(event) => update("personality", event.target.value)} rows={4} /></label>
+        </div>
+      </section>
+
+      <section className="persona-form-section">
+        <header><strong>故事身份与关系</strong><small>可以为不同剧情创建独立版本，避免设定互相污染。</small></header>
+        <div className="persona-editor-grid">
+          <label className="wide"><span>背景经历</span><textarea value={values.background} onChange={(event) => update("background", event.target.value)} rows={4} /></label>
+          <label className="wide"><span>与其他角色的关系</span><textarea value={values.relationships} onChange={(event) => update("relationships", event.target.value)} rows={3} /></label>
+          <label className="wide"><span>专属设定</span><textarea value={values.notes} onChange={(event) => update("notes", event.target.value)} rows={3} placeholder="称呼、行为边界、希望模型长期遵守的设定…" /></label>
+        </div>
+      </section>
 
       {error ? <p className="character-editor-error" role="alert">{error}</p> : null}
       <div className="character-editor-actions persona-editor-actions">
@@ -144,7 +154,15 @@ function PersonaForm({ persona, isActive, onSave, onActivate, onDuplicate, onDel
 
 export function PersonaManagerModal({ personas, activePersonaId, storyLabel, onClose, onSave, onActivate, onDuplicate, onDelete }: ManagerProps) {
   const [selectedId, setSelectedId] = useState(activePersonaId || personas[0]?.id || "");
+  const [query, setQuery] = useState("");
   const selectedPersona = personas.find((persona) => persona.id === selectedId);
+  const visiblePersonas = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    const matched = normalized
+      ? personas.filter((persona) => [persona.name, persona.description, persona.identity, persona.occupation, persona.background].join(" ").toLocaleLowerCase().includes(normalized))
+      : personas;
+    return [...matched].sort((left, right) => Number(right.id === activePersonaId) - Number(left.id === activePersonaId));
+  }, [activePersonaId, personas, query]);
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -152,18 +170,21 @@ export function PersonaManagerModal({ personas, activePersonaId, storyLabel, onC
         <button className="modal-close" onClick={onClose} aria-label="关闭人设管理器">×</button>
         <span className="eyebrow">PERSONA LIBRARY</span>
         <h2 id="persona-manager-title">以不同身份进入故事</h2>
-        <p className="persona-manager-intro">当前剧情：{storyLabel} · 每个剧情会记住自己绑定的人设，切换会话时自动恢复。</p>
+        <p className="persona-manager-intro">每个剧情会记住自己绑定的人设，切换会话时自动恢复，不会影响其他故事。</p>
+        <div className="persona-story-banner"><span>当前剧情</span><strong>{storyLabel}</strong><small>{personas.find((persona) => persona.id === activePersonaId)?.name ?? "尚未绑定人设"}</small></div>
 
         <div className="persona-manager-workspace">
           <aside className="persona-library" aria-label="用户人设列表">
-            <div className="persona-library-heading"><strong>我的人设</strong><span>{personas.length}</span></div>
+            <div className="persona-library-heading"><strong>我的人设</strong><span>{visiblePersonas.length}</span></div>
+            <label className="persona-library-search"><span aria-hidden="true">⌕</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索人设" aria-label="搜索用户人设" /></label>
             <div className="persona-library-list">
-              {personas.map((persona) => (
+              {visiblePersonas.map((persona) => (
                 <button type="button" className={selectedId === persona.id ? "is-selected" : ""} key={persona.id} onClick={() => setSelectedId(persona.id)} aria-current={activePersonaId === persona.id ? "true" : undefined}>
                   <i style={persona.avatarDataUrl ? { backgroundImage: `url(${persona.avatarDataUrl})` } : undefined}>{persona.avatarDataUrl ? "" : persona.name.charAt(0)}</i>
                   <span><strong>{persona.name}</strong><small>{activePersonaId === persona.id ? "当前剧情正在使用" : persona.identity || persona.occupation || "本地人设"}</small></span>
                 </button>
               ))}
+              {visiblePersonas.length === 0 ? <p className="persona-library-empty">没有匹配的人设</p> : null}
             </div>
             <button className="persona-create" type="button" onClick={() => setSelectedId("")}>＋ 新建人设</button>
           </aside>

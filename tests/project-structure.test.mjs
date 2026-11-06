@@ -309,3 +309,19 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(importer, /normalizeImportedOutputRenderer/);
   assert.match(prototype, /查看原文/);
 });
+
+test("keeps personas, story archives, and model settings useful on small screens", async () => {
+  const [prototype, personaManager, styles] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/PersonaManagerModal.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(prototype, /filteredConversations/);
+  assert.match(prototype, /session-overview/);
+  assert.match(prototype, /settings-card-grouped/);
+  assert.match(personaManager, /visiblePersonas/);
+  assert.match(personaManager, /persona-story-banner/);
+  assert.match(personaManager, /persona-library-search/);
+  assert.match(styles, /settings-field-grid\.three/);
+  assert.match(styles, /persona-library-list>button\{flex:0 0 168px/);
+});

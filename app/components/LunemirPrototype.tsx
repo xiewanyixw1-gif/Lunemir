@@ -112,6 +112,7 @@ export function LunemirPrototype() {
   const [sessionOpen, setSessionOpen] = useState(false);
   const [renamingConversationId, setRenamingConversationId] = useState("");
   const [conversationTitle, setConversationTitle] = useState("");
+  const [sessionQuery, setSessionQuery] = useState("");
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [greetingPickerOpen, setGreetingPickerOpen] = useState(false);
@@ -260,6 +261,11 @@ export function LunemirPrototype() {
     if (!query) return runtime.presets;
     return runtime.presets.filter((preset) => [preset.name, preset.sourceName, ...(preset.modules ?? []).flatMap((module) => [module.name, module.content])].join(" ").toLocaleLowerCase().includes(query));
   }, [presetQuery, runtime.presets]);
+  const filteredConversations = useMemo(() => {
+    const query = sessionQuery.trim().toLocaleLowerCase();
+    if (!query) return runtime.conversations;
+    return runtime.conversations.filter((item) => [item.title, ...item.messages.slice(-8).map((message) => message.content)].join(" ").toLocaleLowerCase().includes(query));
+  }, [runtime.conversations, sessionQuery]);
 
   useEffect(() => {
     if (!navigationOpen) return;
@@ -725,19 +731,29 @@ export function LunemirPrototype() {
 
         {section === "settings" && (
           <div className="content-view settings-view">
-            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的语言模型</h2></div><span className={`status-pill ${runtime.connectionStatus}`}>{({ idle: "未测试", testing: "测试中", connected: "已连接", error: "连接失败" })[runtime.connectionStatus]}</span></div>
-            <div className="settings-card">
-              <label>接口类型<select value="compatible" disabled><option value="compatible">OpenAI-compatible</option></select></label>
-              <label>API 地址<input value={runtime.modelConfig.baseUrl} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
-              <label>API Key<input type="password" value={runtime.apiKey} onChange={(event) => runtime.setApiKey(event.target.value)} placeholder="仅保留到本页面关闭" autoComplete="off" /></label>
-              <label>模型 ID<input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
-              <label>温度<input type="number" min="0" max="2" step="0.1" value={runtime.modelConfig.temperature} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, temperature: Number(event.target.value) })} /></label>
-              <label>最大输出 Tokens<input type="number" min="1" step="1" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /><small>不再硬编码上限，请按当前模型允许的值填写。</small></label>
-              <label>上下文窗口<input type="number" min="1024" step="1" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /><small>填写模型实际上下文长度，例如 65535 或 128000。</small></label>
-              <div className="settings-actions"><p>API Key 仅保存在内存中；自定义接口需要允许浏览器跨域访问。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试连接"}</button></div></div>
+            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的语言模型</h2><p className="view-description">配置只属于当前浏览器；API Key 不会写入备份，也不会提交到 GitHub。</p></div><span className={`status-pill ${runtime.connectionStatus}`}>{({ idle: "未测试", testing: "测试中", connected: "已连接", error: "连接失败" })[runtime.connectionStatus]}</span></div>
+            <div className="settings-card settings-card-grouped">
+              <section className="settings-group">
+                <header><span>01</span><div><strong>接口与模型</strong><small>支持 OpenAI-compatible、Ollama、LM Studio 等兼容地址。</small></div></header>
+                <div className="settings-field-grid">
+                  <label>接口类型<select value="compatible" disabled><option value="compatible">OpenAI-compatible</option></select></label>
+                  <label>API 地址<input type="url" value={runtime.modelConfig.baseUrl} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
+                  <label>API Key <small>只保留在当前页面内存</small><input type="password" value={runtime.apiKey} onChange={(event) => runtime.setApiKey(event.target.value)} placeholder="sk-… 或本地服务可留空" autoComplete="off" /></label>
+                  <label>模型 ID <small>{runtime.availableModels.length > 0 ? `已读取 ${runtime.availableModels.length} 个模型` : "测试连接后可读取模型列表"}</small><input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
+                </div>
+              </section>
+              <section className="settings-group">
+                <header><span>02</span><div><strong>生成参数</strong><small>预设可以临时覆盖这些值，原始配置仍会保留。</small></div></header>
+                <div className="settings-field-grid three">
+                  <label>温度<input type="number" min="0" max="2" step="0.1" value={runtime.modelConfig.temperature} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, temperature: Number(event.target.value) })} /><small>数值越高，回复越发散。</small></label>
+                  <label>最大输出 Tokens<input type="number" min="1" step="1" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /><small>按当前模型允许的上限填写。</small></label>
+                  <label>上下文窗口<input type="number" min="1024" step="1" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /><small>例如 65535 或 128000。</small></label>
+                </div>
+              </section>
+              <div className="settings-actions"><p><strong>安全提示</strong>：云端接口需要网络和正确的跨域配置；本地模型地址通常是 localhost。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试并读取模型"}</button></div></div>
             </div>
             <div className="data-card">
-              <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天和设置保存在当前浏览器。导出备份后可以迁移到其他设备。</p></div>
+              <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天、人设、世界书和设置保存在当前浏览器。换设备前导出备份，或从 GitHub 获取代码后再恢复数据。</p></div>
               <div><button onClick={() => void runtime.downloadBackup()}>导出备份</button><label className="restore-button">恢复备份<input type="file" accept="application/json,.json" onChange={(event) => { const file = event.target.files?.[0]; if (file && window.confirm("恢复备份会替换当前浏览器中的 Lunemir 数据，是否继续？")) void runtime.restoreFromBackup(file); event.currentTarget.value = ""; }} /></label></div>
             </div>
           </div>
@@ -827,6 +843,10 @@ export function LunemirPrototype() {
             <span className="eyebrow">STORY ARCHIVE</span>
             <h2 id="session-title">会话、章节与记忆</h2>
             <p className="session-intro">会话彼此独立；剧情分支会保留分支点之前的消息。只有确认后的记忆会进入模型上下文。</p>
+            <div className="session-overview">
+              <div><span>当前故事</span><strong>{runtime.activeConversation?.title ?? "尚未开始"}</strong><small>{activeName} × {runtime.activePersona?.name ?? "旅行者"}</small></div>
+              <dl><div><dt>消息</dt><dd>{runtime.messages.length}</dd></div><div><dt>章节点</dt><dd>{runtime.activeConversation?.checkpoints?.length ?? 0}</dd></div><div><dt>长期记忆</dt><dd>{approvedMemories.length}</dd></div></dl>
+            </div>
             <div className="session-toolbar">
               <button className="primary-button" onClick={() => void runtime.createNewConversation()}>新建会话</button>
               <button onClick={() => void runtime.createCheckpoint()}>保存章节点</button>
@@ -834,21 +854,26 @@ export function LunemirPrototype() {
             </div>
 
             <div className="session-section">
-              <div className="session-section-title"><strong>会话存档</strong><span>{runtime.conversations.length}</span></div>
+              <div className="session-section-title"><strong>会话存档</strong><span>{filteredConversations.length}</span></div>
+              <LibrarySearch label="搜索会话标题或最近消息" value={sessionQuery} count={filteredConversations.length} onChange={setSessionQuery} />
               <div className="session-list">
-                {runtime.conversations.map((item) => (
+                {filteredConversations.map((item) => (
                   <article className={runtime.activeConversation?.id === item.id ? "session-row is-active" : "session-row"} key={item.id}>
                     {renamingConversationId === item.id ? (
                       <div className="session-rename"><input value={conversationTitle} onChange={(event) => setConversationTitle(event.target.value)} maxLength={80} autoFocus /><button onClick={() => { void runtime.renameConversation(item.id, conversationTitle); setRenamingConversationId(""); }}>保存</button><button onClick={() => setRenamingConversationId("")}>取消</button></div>
                     ) : <>
                       <button className="session-select" onClick={() => void runtime.selectConversation(item.id)}>
-                        <strong>{item.title}</strong>
+                        <strong>{item.title}{runtime.activeConversation?.id === item.id ? <em>当前</em> : null}</strong>
                         <small>{item.messages.length} 条消息 · {new Date(item.updatedAt).toLocaleString("zh-CN")}{item.parentConversationId ? " · 剧情分支" : ""}</small>
                       </button>
-                      <div className="session-row-actions"><button onClick={() => { setRenamingConversationId(item.id); setConversationTitle(item.title); }}>重命名</button><button onClick={() => { if (window.confirm(`删除会话“${item.title}”？此操作无法撤销。`)) void runtime.deleteConversation(item.id); }}>删除</button></div>
+                      <LibraryActionMenu label={`管理会话 ${item.title}`} actions={[
+                        { label: "重命名", onSelect: () => { setRenamingConversationId(item.id); setConversationTitle(item.title); } },
+                        { label: "删除会话", danger: true, onSelect: () => { if (window.confirm(`删除会话“${item.title}”？此操作无法撤销。`)) return runtime.deleteConversation(item.id); } },
+                      ]} />
                     </>}
                   </article>
                 ))}
+                {filteredConversations.length === 0 ? <div className="empty-state session-empty"><span>⌕</span><strong>没有匹配的会话</strong><p>换一个标题或最近消息关键词试试。</p></div> : null}
               </div>
             </div>
 
