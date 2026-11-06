@@ -160,6 +160,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     lineHeight: clamp(value?.lineHeight, 1.4, 2.4, DEFAULT_APPEARANCE.lineHeight),
     paragraphSpacing: clamp(value?.paragraphSpacing, 0, 32, DEFAULT_APPEARANCE.paragraphSpacing),
     messageMaxWidth: clamp(value?.messageMaxWidth, 520, 1080, DEFAULT_APPEARANCE.messageMaxWidth),
+    mobileReadingInset: clamp(value?.mobileReadingInset, 4, 40, DEFAULT_APPEARANCE.mobileReadingInset),
   };
 }
 

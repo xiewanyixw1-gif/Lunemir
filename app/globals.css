@@ -32,6 +32,7 @@
   --lm-message-line-height: 1.85;
   --lm-paragraph-spacing: 14px;
   --lm-chat-max-width: 860px;
+  --lm-mobile-reading-inset: 14px;
 }
 
 * { box-sizing: border-box; }
@@ -406,7 +407,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .lunemir-app[data-font-family="serif"] .novel-message-content{font-family:Georgia,"Noto Serif SC","Songti SC",serif}.lunemir-app[data-font-family="sans"] .novel-message-content{font-family:Inter,"Segoe UI","Microsoft YaHei UI",sans-serif}.lunemir-app[data-font-family="system"] .novel-message-content{font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei UI",sans-serif}
 .lunemir-app[data-message-style="novel-flow"] .character-message .safe-message-content{width:100%}
 
-@media (max-width:700px){.lunemir-app[data-message-style="novel-flow"] .character-message{width:100%!important;max-width:100%!important;padding:8px clamp(22px,7vw,34px)}.lunemir-app[data-glass-scope="messages"][data-message-style="novel-flow"] .character-message{padding:12px clamp(22px,7vw,34px)}.novel-message-content{gap:max(16px,var(--lm-paragraph-spacing))}.message-tools{margin-top:9px}.message-actions button{min-height:30px;padding:6px 9px}}
+@media (max-width:700px){.lunemir-app[data-message-style="novel-flow"] .message-list{padding-right:var(--lm-mobile-reading-inset);padding-left:var(--lm-mobile-reading-inset)}.lunemir-app[data-message-style="novel-flow"] .character-message,.lunemir-app[data-glass-scope="messages"][data-message-style="novel-flow"] .character-message{width:100%!important;max-width:100%!important;padding:8px 0;background:transparent}.novel-message-content{gap:max(16px,var(--lm-paragraph-spacing))}.message-tools{margin-top:9px}.message-actions button{min-height:30px;padding:6px 9px}}
 
 @media (max-width:700px){.lunemir-app[data-avatar-layout="header"] .message{max-width:100%}.lunemir-app[data-avatar-layout="header"] .user-message{max-width:92%}.appearance-section-note{max-width:150px;text-align:right}.appearance-heading-actions{justify-content:flex-start}.appearance-heading-actions .subtle-label{width:100%}}
 

@@ -157,11 +157,15 @@ test("ships persistent UI 2.0 chat appearance controls", async () => {
   assert.match(prototype, /回到最新消息/);
   assert.match(appearance, /沉浸式|小说流/);
   assert.match(appearance, /毛玻璃范围与质感/);
+  assert.match(appearance, /手机两侧留白/);
   assert.match(glass, /lm-glass-opacity/);
   assert.match(types, /glassScope/);
+  assert.match(types, /mobileReadingInset/);
   assert.match(defaults, /messageStyle: "novel-flow"/);
+  assert.match(defaults, /mobileReadingInset: 14/);
   assert.match(styles, /only|data-glass-scope/);
   assert.match(styles, /height:100dvh/);
+  assert.match(styles, /--lm-mobile-reading-inset/);
 });
 
 test("supports persistent character card management", async () => {

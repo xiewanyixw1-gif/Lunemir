@@ -204,6 +204,7 @@ export function LunemirPrototype() {
     "--lm-message-line-height": runtime.appearance.lineHeight,
     "--lm-paragraph-spacing": `${runtime.appearance.paragraphSpacing}px`,
     "--lm-chat-max-width": `${runtime.appearance.messageMaxWidth}px`,
+    "--lm-mobile-reading-inset": `${runtime.appearance.mobileReadingInset}px`,
   } as CSSProperties;
   const activeBackground = runtime.appearance.backgroundMode === "custom"
     ? runtime.appearance.backgroundImage

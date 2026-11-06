@@ -304,6 +304,7 @@ export type AppearanceSettings = {
   lineHeight: number;
   paragraphSpacing: number;
   messageMaxWidth: number;
+  mobileReadingInset: number;
 };
 
 export type PersistedSettings = {

@@ -21,7 +21,8 @@ type NumericAppearanceKey =
   | "fontWeight"
   | "lineHeight"
   | "paragraphSpacing"
-  | "messageMaxWidth";
+  | "messageMaxWidth"
+  | "mobileReadingInset";
 
 type RangeControlProps = {
   label: string;
@@ -173,6 +174,7 @@ export function ChatAppearancePanel({
           <RangeControl {...rangeProps} label="正文行高" field="lineHeight" min={1.4} max={2.4} step={0.05} />
           <RangeControl {...rangeProps} label="段落间距" field="paragraphSpacing" min={0} max={32} suffix="px" />
           <RangeControl {...rangeProps} label="桌面阅读宽度" field="messageMaxWidth" min={520} max={1080} step={20} suffix="px" />
+          <RangeControl {...rangeProps} label="手机两侧留白" field="mobileReadingInset" min={4} max={40} suffix="px" />
         </div>
         <div className="appearance-grid two">
           <ChoiceGroup label="正文字体" value={value.fontFamily} options={[{ value: "serif", label: "小说衬线" }, { value: "sans", label: "现代无衬线" }, { value: "system", label: "跟随系统" }]} onChange={(next) => savePatch("fontFamily", next)} />
