@@ -203,6 +203,16 @@ export type StorySummary = {
   updatedAt: string;
 };
 
+export type StoryState = {
+  currentTime: string;
+  location: string;
+  scene: string;
+  npcInitiative: number;
+  cooldownMinutes: number;
+  lastNpcActionAt?: string;
+  updatedAt: string;
+};
+
 export type ConversationRecord = {
   id: string;
   schemaVersion: 1;
@@ -215,11 +225,12 @@ export type ConversationRecord = {
   memories?: ConversationMemory[];
   authorNote?: AuthorNote;
   storySummary?: StorySummary;
+  storyState?: StoryState;
   createdAt: string;
   updatedAt: string;
 };
 
-export type StoryEventType = "phone_message_received" | "phone_message_sent";
+export type StoryEventType = "phone_message_received" | "phone_message_sent" | "time_advanced" | "story_state_changed";
 
 export type StoryEvent = {
   id: string;
@@ -231,10 +242,15 @@ export type StoryEvent = {
   content: string;
   storyTime: string;
   source: "ai" | "user" | "system";
-  status: "committed";
+  status: "committed" | "reverted";
   createdAt: string;
   readAt?: string;
   replyToEventId?: string;
+  metadata?: {
+    reason?: string;
+    previousStoryState?: StoryState;
+    nextStoryState?: StoryState;
+  };
 };
 
 export type ModelConfig = {
@@ -385,7 +401,7 @@ export type CompiledContext = {
 
 export type LunemirBackup = {
   format: "lunemir-backup";
-  schemaVersion: 5;
+  schemaVersion: 6;
   exportedAt: string;
   characters: CharacterRecord[];
   conversations: ConversationRecord[];

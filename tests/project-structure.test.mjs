@@ -66,7 +66,7 @@ test("ships a local-first persistence and backup layer", async () => {
   assert.match(storage, /LOREBOOK_STORE/);
   assert.match(storage, /PERSONA_STORE/);
   assert.match(storage, /PRESET_STORE/);
-  assert.match(storage, /schemaVersion: 5/);
+  assert.match(storage, /schemaVersion: 6/);
   assert.match(storage, /unique: false/);
   assert.match(storage, /STORY_EVENT_STORE/);
 });
@@ -358,7 +358,7 @@ test("persists author notes, confirmed summaries, and advanced lore triggers", a
   ]);
   assert.match(types, /type AuthorNote/);
   assert.match(types, /type StorySummary/);
-  assert.match(storage, /schemaVersion: 5/);
+  assert.match(storage, /schemaVersion: 6/);
   assert.match(context, /已经确认的剧情摘要/);
   assert.match(context, /expiresAfterMessageCount/);
   assert.match(context, /deterministicPercent/);
@@ -371,4 +371,26 @@ test("persists author notes, confirmed summaries, and advanced lore triggers", a
   assert.match(loreEditor, /递归触发/);
   assert.match(importer, /recursive_scanning/);
   assert.match(prototype, /StoryGuidanceModal/);
+});
+
+test("persists one story clock and drives bounded NPC initiative checks", async () => {
+  const [types, events, runtime, context, timeline, prototype, styles] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/story-events.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/components/StoryTimelineModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(types, /type StoryState/);
+  assert.match(types, /time_advanced/);
+  assert.match(events, /normalizeStoryState/);
+  assert.match(runtime, /advanceStoryTime/);
+  assert.match(runtime, /cooldownMinutes/);
+  assert.match(runtime, /revertStoryEvent/);
+  assert.match(context, /统一剧情状态/);
+  assert.match(timeline, /一次推进只触发一次受控检查/);
+  assert.match(prototype, /剧情时间与事件/);
+  assert.match(styles, /story-timeline-layout/);
 });

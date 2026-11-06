@@ -10,6 +10,7 @@ import type {
   PresetRecord,
   StoredMessage,
   StoryEvent,
+  StoryState,
   StorySummary,
 } from "./types";
 
@@ -21,6 +22,7 @@ export type ContextOptions = {
   storyEvents?: StoryEvent[];
   authorNote?: AuthorNote;
   storySummary?: StorySummary;
+  storyState?: StoryState;
 };
 
 export function estimateTokens(text: string) {
@@ -121,7 +123,9 @@ export function compileContext(
   const replaceMacros = (value: string) => value
     .replaceAll(/{{char}}/gi, character.name)
     .replaceAll(/{{user}}/gi, persona?.name || "用户");
-  const phoneEvents = (options.storyEvents ?? []).slice(-12);
+  const phoneEvents = (options.storyEvents ?? [])
+    .filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent"))
+    .slice(-12);
   const phoneText = phoneEvents.map((event) => {
     const sender = event.actorId === character.id ? character.name : persona?.name || "用户";
     const receiver = event.targetId === character.id ? character.name : persona?.name || "用户";
@@ -162,11 +166,18 @@ export function compileContext(
     && (options.authorNote.expiresAfterMessageCount === undefined || messages.length < options.authorNote.expiresAfterMessageCount),
   );
   const authorNoteText = authorNoteActive ? replaceMacros(options.authorNote?.content.trim() ?? "") : "";
+  const storyStateText = options.storyState
+    ? [
+        `当前剧情时间：${new Date(options.storyState.currentTime).toLocaleString("zh-CN")}`,
+        options.storyState.location && `当前地点：${options.storyState.location}`,
+        options.storyState.scene && `当前场景：${options.storyState.scene}`,
+      ].filter(Boolean).join("\n")
+    : "";
   const postHistory = [presetPostHistory, character.postHistoryInstructions, options.authorNote?.position === "post_history" ? authorNoteText : ""]
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, characterDefinition, personaDefinition, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
+  const systemContent = [presetPrompt, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
     .filter(Boolean)
     .join("\n\n---\n\n");
   const coveredMessageCount = summaryText ? Math.min(messages.length, options.storySummary?.coveredMessageCount ?? 0) : 0;
@@ -224,6 +235,12 @@ export function compileContext(
       label: "手机联动",
       detail: `${phoneEvents.length} 条已确认事件`,
       estimatedTokens: estimateTokens(phoneText),
+    }] : []),
+    ...(storyStateText ? [{
+      id: "story-state",
+      label: "剧情状态",
+      detail: options.storyState?.location || new Date(options.storyState?.currentTime ?? "").toLocaleString("zh-CN"),
+      estimatedTokens: estimateTokens(storyStateText),
     }] : []),
     {
       id: "history",

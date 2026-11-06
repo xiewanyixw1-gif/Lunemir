@@ -15,6 +15,7 @@ import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 import { SafeMessageContent } from "./SafeMessageContent";
 import { StoryGuidanceModal } from "./StoryGuidanceModal";
+import { StoryTimelineModal } from "./StoryTimelineModal";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
@@ -119,6 +120,7 @@ export function LunemirPrototype() {
   const [contextOpen, setContextOpen] = useState(false);
   const [contextInspectorOpen, setContextInspectorOpen] = useState(false);
   const [storyGuidanceOpen, setStoryGuidanceOpen] = useState(false);
+  const [storyTimelineOpen, setStoryTimelineOpen] = useState(false);
   const [greetingPickerOpen, setGreetingPickerOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
@@ -270,6 +272,10 @@ export function LunemirPrototype() {
     if (!query) return runtime.conversations;
     return runtime.conversations.filter((item) => [item.title, ...item.messages.slice(-8).map((message) => message.content)].join(" ").toLocaleLowerCase().includes(query));
   }, [runtime.conversations, sessionQuery]);
+  const phoneMessages = useMemo(
+    () => runtime.storyEvents.filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent")),
+    [runtime.storyEvents],
+  );
 
   useEffect(() => {
     if (!navigationOpen) return;
@@ -464,6 +470,7 @@ export function LunemirPrototype() {
                 <div>
                   <button type="button" onClick={() => setSessionOpen(true)}>会话、章节与记忆</button>
                   <button type="button" onClick={() => setStoryGuidanceOpen(true)}>作者注释与剧情摘要</button>
+                  <button type="button" onClick={() => setStoryTimelineOpen(true)}>剧情时间与事件 <span>{runtime.storyEvents.filter((event) => event.status === "committed").length}</span></button>
                   {greetingOptions.length > 1 ? <button type="button" onClick={() => setGreetingPickerOpen(true)}>选择开场白 <span>{greetingOptions.length}</span></button> : null}
                   <button type="button" className="context-menu-action" onClick={() => setContextOpen(!contextOpen)}>上下文详情</button>
                 </div>
@@ -813,7 +820,7 @@ export function LunemirPrototype() {
         aria-hidden={!phoneOpen}
       >
         <div className="phone-frame">
-          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>{new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><i /><span>◒</span></div>
+          <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机"><span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span><i /><span>◒</span></div>
           <div className="phone-hero"><small>LUNEMIR PHONE</small><strong>晚安，{runtime.activePersona?.name ?? "旅行者"}</strong><span>{runtime.activeConversation?.title ?? `${activeName} · 本地会话`}</span></div>
           <div className="phone-apps">
             {(["messages", "notes"] as PhoneApp[]).map((app) => {
@@ -823,13 +830,13 @@ export function LunemirPrototype() {
           </div>
           <div className="phone-content">
             {phoneApp === "messages" && <div className="phone-chat">
-              <div className="phone-chat-heading"><span><strong>{activeName}</strong><small>{runtime.phoneEventStatus === "checking" ? "正在检查剧情事件…" : runtime.phoneEventStatus === "error" ? "联动检查失败，可重试" : "与主剧情共享记录"}</small></span><button disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()}>{runtime.phoneEventStatus === "checking" ? "…" : "检查新消息"}</button></div>
+              <div className="phone-chat-heading"><span><strong>{activeName}</strong><small>{runtime.phoneEventStatus === "checking" ? "正在检查剧情事件…" : runtime.phoneEventMessage || "与主剧情共享记录"}</small></span><button disabled={runtime.phoneEventStatus === "checking"} onClick={() => void runtime.requestPhoneEvent()}>{runtime.phoneEventStatus === "checking" ? "…" : "检查新消息"}</button></div>
               <div className="phone-message-list" ref={phoneMessageListRef}>
-                {runtime.storyEvents.map((event) => {
+                {phoneMessages.map((event) => {
                   const incoming = event.eventType === "phone_message_received";
                   return <article className={incoming ? "phone-message incoming" : "phone-message outgoing"} key={event.id}><span>{event.content}</span><time>{new Date(event.storyTime).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}{incoming && event.readAt ? " · 已读" : ""}</time></article>;
                 })}
-                {runtime.storyEvents.length === 0 && <p className="phone-caption">还没有手机通信。完成一轮主剧情后系统会检查角色是否有理由联系你，也可以手动检查一次。</p>}
+                {phoneMessages.length === 0 && <p className="phone-caption">还没有手机通信。推进剧情时间或完成一轮主剧情后，系统会按角色主动性与冷却规则检查一次。</p>}
               </div>
               <form className="phone-composer" onSubmit={(event) => { event.preventDefault(); const content = phoneDraft.trim(); if (!content) return; setPhoneDraft(""); void runtime.sendPhoneMessage(content); }}>
                 <input value={phoneDraft} onChange={(event) => setPhoneDraft(event.target.value)} placeholder={`回复 ${activeName}…`} maxLength={600} />
@@ -921,6 +928,21 @@ export function LunemirPrototype() {
           onSaveAuthorNote={runtime.saveAuthorNote}
           onSaveSummary={runtime.saveStorySummary}
           onGenerateSummary={runtime.generateStorySummaryDraft}
+        />
+      ) : null}
+
+      {storyTimelineOpen && runtime.storyState ? (
+        <StoryTimelineModal
+          key={runtime.storyState.updatedAt}
+          storyState={runtime.storyState}
+          storyEvents={runtime.storyEvents}
+          npcStatus={runtime.phoneEventStatus}
+          npcMessage={runtime.phoneEventMessage}
+          onClose={() => setStoryTimelineOpen(false)}
+          onSaveState={runtime.saveStoryState}
+          onAdvanceTime={runtime.advanceStoryTime}
+          onCheckNpc={() => runtime.requestPhoneEvent()}
+          onRevertEvent={runtime.revertStoryEvent}
         />
       ) : null}
 
