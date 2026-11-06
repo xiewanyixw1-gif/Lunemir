@@ -217,6 +217,7 @@ export function LunemirPrototype() {
     "--lm-paragraph-spacing": `${runtime.appearance.paragraphSpacing}px`,
     "--lm-chat-max-width": `${runtime.appearance.messageMaxWidth}px`,
     "--lm-mobile-reading-inset": `${runtime.appearance.mobileReadingInset}px`,
+    "--lm-phone-width": `${350 * runtime.appearance.phoneScale / 100}px`,
     "--lm-phone-height": `${720 * runtime.appearance.phoneScale / 100}px`,
   } as CSSProperties;
   const activeBackground = runtime.appearance.backgroundMode === "custom"
@@ -851,10 +852,7 @@ export function LunemirPrototype() {
         aria-hidden={!phoneOpen}
       >
         <div className={`phone-frame phone-screen-${phoneApp}`}>
-          <div
-            className="phone-wallpaper"
-            style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}
-          />
+          <div className="phone-wallpaper" />
           <div className="phone-status" onPointerDown={(event) => beginPhoneDrag(event, "panel")} onPointerMove={movePhoneDrag} onPointerUp={endPhoneDrag} onPointerCancel={endPhoneDrag} title="拖动手机">
             <span>{new Date(runtime.storyState?.currentTime ?? runtime.activeConversation?.createdAt ?? 0).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</span>
             <i className="phone-island" />
@@ -952,7 +950,7 @@ export function LunemirPrototype() {
                 </div>
                 <section className="phone-size-setting">
                   <span><strong>手机尺寸</strong><small>保持手机比例，只改变悬浮窗口大小</small></span>
-                  <div><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.max(65, runtime.appearance.phoneScale - 5) })} aria-label="缩小手机">−</button><b>{runtime.appearance.phoneScale}%</b><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.min(110, runtime.appearance.phoneScale + 5) })} aria-label="放大手机">＋</button></div>
+                  <div><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.max(65, runtime.appearance.phoneScale - 5) })} aria-label="缩小手机">−</button><b>{runtime.appearance.phoneScale}%</b><button type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: Math.min(100, runtime.appearance.phoneScale + 5) })} aria-label="放大手机">＋</button></div>
                   <button className="phone-size-reset" type="button" onClick={() => void runtime.saveAppearance({ ...runtime.appearance, phoneScale: 82 })}>恢复默认大小</button>
                 </section>
                 <div className="phone-setting-group"><button type="button" onClick={() => setPhoneApp("story")}><span><i className="gold">◷</i>剧情状态</span><b>›</b></button><button type="button" onClick={() => setPhoneApp("contacts")}><span><i className="green">人</i>角色与人设</span><b>›</b></button></div>
