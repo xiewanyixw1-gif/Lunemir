@@ -222,7 +222,7 @@ export async function createBackup(): Promise<LunemirBackup> {
 
   return {
     format: "lunemir-backup",
-    schemaVersion: 4,
+    schemaVersion: 5,
     exportedAt: new Date().toISOString(),
     characters,
     conversations,
@@ -235,7 +235,7 @@ export async function createBackup(): Promise<LunemirBackup> {
 }
 
 type RestorableBackup = Omit<LunemirBackup, "schemaVersion" | "lorebooks" | "personas" | "presets" | "storyEvents"> & {
-  schemaVersion: 1 | 2 | 3 | 4;
+  schemaVersion: 1 | 2 | 3 | 4 | 5;
   lorebooks?: LorebookRecord[];
   personas?: PersonaRecord[];
   presets?: PresetRecord[];
@@ -246,7 +246,7 @@ function isBackup(value: unknown): value is RestorableBackup {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<RestorableBackup>;
   return candidate.format === "lunemir-backup"
-    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3 || candidate.schemaVersion === 4)
+    && (candidate.schemaVersion === 1 || candidate.schemaVersion === 2 || candidate.schemaVersion === 3 || candidate.schemaVersion === 4 || candidate.schemaVersion === 5)
     && Array.isArray(candidate.characters)
     && Array.isArray(candidate.conversations);
 }

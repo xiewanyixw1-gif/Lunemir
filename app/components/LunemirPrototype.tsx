@@ -14,6 +14,7 @@ import { LorebookEditorModal } from "./LorebookEditorModal";
 import { PersonaManagerModal } from "./PersonaManagerModal";
 import { PresetEditorModal } from "./PresetEditorModal";
 import { SafeMessageContent } from "./SafeMessageContent";
+import { StoryGuidanceModal } from "./StoryGuidanceModal";
 
 type Section = "chat" | "characters" | "lore" | "presets" | "themes" | "settings";
 type PhoneApp = "messages" | "notes";
@@ -117,6 +118,7 @@ export function LunemirPrototype() {
   const [personaOpen, setPersonaOpen] = useState(false);
   const [contextOpen, setContextOpen] = useState(false);
   const [contextInspectorOpen, setContextInspectorOpen] = useState(false);
+  const [storyGuidanceOpen, setStoryGuidanceOpen] = useState(false);
   const [greetingPickerOpen, setGreetingPickerOpen] = useState(false);
   const [characterEditor, setCharacterEditor] = useState<CharacterEditorTarget | null>(null);
   const [lorebookEditor, setLorebookEditor] = useState<LorebookEditorTarget | null>(null);
@@ -461,6 +463,7 @@ export function LunemirPrototype() {
                 <summary className="icon-button" aria-label="打开聊天菜单">•••</summary>
                 <div>
                   <button type="button" onClick={() => setSessionOpen(true)}>会话、章节与记忆</button>
+                  <button type="button" onClick={() => setStoryGuidanceOpen(true)}>作者注释与剧情摘要</button>
                   {greetingOptions.length > 1 ? <button type="button" onClick={() => setGreetingPickerOpen(true)}>选择开场白 <span>{greetingOptions.length}</span></button> : null}
                   <button type="button" className="context-menu-action" onClick={() => setContextOpen(!contextOpen)}>上下文详情</button>
                 </div>
@@ -906,6 +909,18 @@ export function LunemirPrototype() {
           report={runtime.contextReport}
           presetName={runtime.activePreset?.name}
           onClose={() => setContextInspectorOpen(false)}
+        />
+      ) : null}
+
+      {storyGuidanceOpen ? (
+        <StoryGuidanceModal
+          authorNote={runtime.activeConversation?.authorNote}
+          storySummary={runtime.activeConversation?.storySummary}
+          messageCount={runtime.messages.length}
+          onClose={() => setStoryGuidanceOpen(false)}
+          onSaveAuthorNote={runtime.saveAuthorNote}
+          onSaveSummary={runtime.saveStorySummary}
+          onGenerateSummary={runtime.generateStorySummaryDraft}
         />
       ) : null}
 

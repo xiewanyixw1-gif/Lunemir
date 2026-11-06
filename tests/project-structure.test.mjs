@@ -66,7 +66,7 @@ test("ships a local-first persistence and backup layer", async () => {
   assert.match(storage, /LOREBOOK_STORE/);
   assert.match(storage, /PERSONA_STORE/);
   assert.match(storage, /PRESET_STORE/);
-  assert.match(storage, /schemaVersion: 4/);
+  assert.match(storage, /schemaVersion: 5/);
   assert.match(storage, /unique: false/);
   assert.match(storage, /STORY_EVENT_STORE/);
 });
@@ -343,4 +343,32 @@ test("inspects the exact prompt, active preset modules, and lore matches", async
   assert.doesNotMatch(inspector, /dangerouslySetInnerHTML/);
   assert.match(prototype, /contextInspectorOpen/);
   assert.match(styles, /context-inspector-grid/);
+});
+
+test("persists author notes, confirmed summaries, and advanced lore triggers", async () => {
+  const [types, storage, context, runtime, guidance, loreEditor, importer, prototype] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("app/components/StoryGuidanceModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/LorebookEditorModal.tsx", root), "utf8"),
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+  ]);
+  assert.match(types, /type AuthorNote/);
+  assert.match(types, /type StorySummary/);
+  assert.match(storage, /schemaVersion: 5/);
+  assert.match(context, /已经确认的剧情摘要/);
+  assert.match(context, /expiresAfterMessageCount/);
+  assert.match(context, /deterministicPercent/);
+  assert.match(context, /递归关键词触发/);
+  assert.match(runtime, /generateStorySummaryDraft/);
+  assert.match(runtime, /saveAuthorNote/);
+  assert.match(guidance, /只有已确认摘要会进入模型上下文/);
+  assert.match(loreEditor, /扫描深度/);
+  assert.match(loreEditor, /概率触发/);
+  assert.match(loreEditor, /递归触发/);
+  assert.match(importer, /recursive_scanning/);
+  assert.match(prototype, /StoryGuidanceModal/);
 });

@@ -53,7 +53,7 @@ export function ContextInspectorModal({ report, presetName, onClose }: Inspector
               {report.matchedLore.length > 0 ? report.matchedLore.map((match) => (
                 <details key={match.entry.id}>
                   <summary><span><strong>{match.entry.name}</strong><small>{match.reason} · P{match.entry.priority}</small></span><i>⌄</i></summary>
-                  <p>{match.entry.content}</p>
+                  <p>{match.content}</p>
                 </details>
               )) : <p>已扫描 {report.loreStats.total} 个条目，没有条目被当前对话触发。</p>}
             </section>

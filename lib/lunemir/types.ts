@@ -12,6 +12,11 @@ export type LorebookEntry = {
   priority: number;
   insertionOrder: number;
   caseSensitive: boolean;
+  scanDepth?: number;
+  probability?: number;
+  useProbability?: boolean;
+  recursive?: boolean;
+  tokenBudget?: number;
   extensions: Record<string, unknown>;
 };
 
@@ -182,6 +187,22 @@ export type ConversationMemory = {
   createdAt: string;
 };
 
+export type AuthorNote = {
+  content: string;
+  enabled: boolean;
+  position: "system" | "in_history" | "post_history";
+  depth: number;
+  expiresAfterMessageCount?: number;
+  updatedAt: string;
+};
+
+export type StorySummary = {
+  content: string;
+  status: "draft" | "confirmed";
+  coveredMessageCount: number;
+  updatedAt: string;
+};
+
 export type ConversationRecord = {
   id: string;
   schemaVersion: 1;
@@ -192,6 +213,8 @@ export type ConversationRecord = {
   branchedFromMessageId?: string;
   checkpoints?: ConversationCheckpoint[];
   memories?: ConversationMemory[];
+  authorNote?: AuthorNote;
+  storySummary?: StorySummary;
   createdAt: string;
   updatedAt: string;
 };
@@ -331,6 +354,7 @@ export type ContextPresetModule = {
 export type MatchedLore = {
   entry: LorebookEntry;
   reason: string;
+  content: string;
 };
 
 export type ContextReport = {
@@ -361,7 +385,7 @@ export type CompiledContext = {
 
 export type LunemirBackup = {
   format: "lunemir-backup";
-  schemaVersion: 4;
+  schemaVersion: 5;
   exportedAt: string;
   characters: CharacterRecord[];
   conversations: ConversationRecord[];

@@ -51,6 +51,7 @@ export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
 
   return entries.map((entry, index): LorebookEntry => {
     const source = asRecord(entry);
+    const entryExtensions = asRecord(source.extensions);
     const order = asNumber(source.order, index);
     const defaultPriority = typeof source.order === "number" ? order : 50;
     return {
@@ -65,7 +66,12 @@ export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
       priority: asNumber(source.priority, defaultPriority),
       insertionOrder: asNumber(source.insertion_order, order),
       caseSensitive: source.case_sensitive === true || source.caseSensitive === true,
-      extensions: asRecord(source.extensions),
+      scanDepth: asNumber(source.scan_depth ?? entryExtensions.scan_depth, 12),
+      probability: asNumber(source.probability ?? entryExtensions.probability, 100),
+      useProbability: source.useProbability === true || source.use_probability === true || entryExtensions.useProbability === true,
+      recursive: source.recursive === true || source.recursive_scanning === true || entryExtensions.recursive === true,
+      tokenBudget: asNumber(source.token_budget ?? entryExtensions.token_budget, 0),
+      extensions: entryExtensions,
     };
   });
 }

@@ -34,6 +34,7 @@ import {
 } from "../../lib/lunemir/storage";
 import type {
   AppearanceSettings,
+  AuthorNote,
   CharacterRecord,
   CharacterEditorValues,
   ContentImportPreview,
@@ -48,6 +49,7 @@ import type {
   PresetRecord,
   StoredMessage,
   StoryEvent,
+  StorySummary,
 } from "../../lib/lunemir/types";
 
 function initialMessage(character: CharacterRecord, greeting = character.firstMessage): StoredMessage[] {
@@ -194,7 +196,9 @@ export function useLunemirRuntime() {
     externalLoreEntries: LorebookRecord["entries"];
     memories: string[];
     storyEvents: StoryEvent[];
-  }>({ persona: null, preset: null, externalLoreEntries: [], memories: [], storyEvents: [] });
+    authorNote?: AuthorNote;
+    storySummary?: StorySummary;
+  }>({ persona: null, preset: null, externalLoreEntries: [], memories: [], storyEvents: [], authorNote: undefined, storySummary: undefined });
   const contentLibraryRef = useRef<{
     lorebooks: LorebookRecord[];
     assignments: Record<string, string[]>;
@@ -274,6 +278,8 @@ export function useLunemirRuntime() {
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
     contextResourcesRef.current.storyEvents = nextStoryEvents;
+    contextResourcesRef.current.authorNote = nextConversation.authorNote;
+    contextResourcesRef.current.storySummary = nextConversation.storySummary;
     contextResourcesRef.current.persona = nextPersona;
     setActivePersonaId(nextPersona?.id ?? "");
     const nextPersonaAssignments = nextPersona
@@ -345,6 +351,8 @@ export function useLunemirRuntime() {
         .flatMap((lorebook) => lorebook.entries),
       memories: [],
       storyEvents: [],
+      authorNote: undefined,
+      storySummary: undefined,
     };
     const nextModel = settings.model ?? DEFAULT_MODEL_CONFIG;
     setAppearance(normalizeAppearance(settings.appearance));
@@ -393,6 +401,8 @@ export function useLunemirRuntime() {
       .filter((memory) => memory.status === "approved")
       .map((memory) => memory.content);
     contextResourcesRef.current.storyEvents = nextStoryEvents;
+    contextResourcesRef.current.authorNote = nextConversation.authorNote;
+    contextResourcesRef.current.storySummary = nextConversation.storySummary;
     contextResourcesRef.current.persona = nextPersona;
     setActivePersonaId(nextPersona?.id ?? "");
     const nextPersonaAssignments = nextPersona
@@ -561,6 +571,11 @@ export function useLunemirRuntime() {
             constant: entry.constant,
             selective: entry.selective,
             insertion_order: entry.insertionOrder,
+            scan_depth: entry.scanDepth ?? 12,
+            probability: entry.probability ?? 100,
+            useProbability: entry.useProbability ?? false,
+            recursive_scanning: entry.recursive ?? false,
+            token_budget: entry.tokenBudget ?? 0,
             extensions: { ...entry.extensions, priority: entry.priority },
           })),
         } : undefined,
@@ -717,6 +732,76 @@ export function useLunemirRuntime() {
     contextResourcesRef.current.memories = memories.filter((memory) => memory.status === "approved").map((memory) => memory.content);
     refreshContext(character, messages);
     await saveConversation(nextConversation);
+  }
+
+  async function saveAuthorNote(values: { content: string; enabled: boolean; position: AuthorNote["position"]; depth: number; durationTurns: number }) {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming) return false;
+    const content = values.content.trim();
+    const durationTurns = Math.max(0, Math.round(values.durationTurns));
+    const authorNote: AuthorNote | undefined = content ? {
+      content,
+      enabled: values.enabled,
+      position: values.position,
+      depth: Math.min(40, Math.max(0, Math.round(values.depth))),
+      ...(durationTurns > 0 ? { expiresAfterMessageCount: messages.length + durationTurns * 2 } : {}),
+      updatedAt: new Date().toISOString(),
+    } : undefined;
+    const nextConversation = { ...conversation, authorNote, updatedAt: new Date().toISOString() };
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    contextResourcesRef.current.authorNote = authorNote;
+    await saveConversation(nextConversation);
+    refreshContext(character, messages);
+    return true;
+  }
+
+  async function saveStorySummary(contentValue: string, status: StorySummary["status"]) {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming) return false;
+    const content = contentValue.trim();
+    const sameDraft = conversation.storySummary?.status === "draft" && conversation.storySummary.content === content;
+    const storySummary: StorySummary | undefined = content ? {
+      content,
+      status,
+      coveredMessageCount: sameDraft ? conversation.storySummary?.coveredMessageCount ?? messages.length : messages.length,
+      updatedAt: new Date().toISOString(),
+    } : undefined;
+    const nextConversation = { ...conversation, storySummary, updatedAt: new Date().toISOString() };
+    setConversation(nextConversation);
+    setConversations((items) => items.map((item) => item.id === nextConversation.id ? nextConversation : item));
+    contextResourcesRef.current.storySummary = storySummary;
+    await saveConversation(nextConversation);
+    refreshContext(character, messages);
+    return true;
+  }
+
+  async function generateStorySummaryDraft() {
+    const character = activeCharacter;
+    if (!character || !conversation || streaming || messages.length === 0) return null;
+    setRuntimeError("");
+    if (!modelIsReady()) return null;
+    const personaName = activePersona?.name ?? "用户";
+    const transcript = messages.slice(-80).map((message) => `${message.role === "assistant" ? character.name : personaName}：${message.content}`).join("\n\n");
+    const controller = new AbortController();
+    try {
+      const content = await generateChatCompletion({
+        config: modelConfig,
+        apiKey,
+        signal: controller.signal,
+        maxTokens: Math.min(modelConfig.maxTokens, 1000),
+        temperature: 0.2,
+        messages: [
+          { role: "system", content: "你是剧情档案整理器。只总结已经明确发生的事实，不补写、不推测。保留：重要事件、当前场景与时间、人物关系变化、承诺、秘密、未完成事项和伏笔。使用简洁中文分点输出。" },
+          { role: "user", content: `请整理以下剧情记录：\n\n${transcript}` },
+        ],
+      });
+      await saveStorySummary(content, "draft");
+      return content;
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "剧情摘要生成失败。");
+      return null;
+    }
   }
 
   async function commitStoryEvent(event: StoryEvent, contextMessages: StoredMessage[] = messages) {
@@ -1109,6 +1194,11 @@ export function useLunemirRuntime() {
       secondaryKeys: [...entry.secondaryKeys],
       content: entry.content.trim(),
       insertionOrder: index,
+      scanDepth: Math.min(100, Math.max(1, Math.round(entry.scanDepth ?? 12))),
+      probability: Math.min(100, Math.max(0, Math.round(entry.probability ?? 100))),
+      useProbability: Boolean(entry.useProbability),
+      recursive: Boolean(entry.recursive),
+      tokenBudget: Math.max(0, Math.round(entry.tokenBudget ?? 0)),
       extensions: { ...entry.extensions },
     }));
     if (!values.name.trim()) {
@@ -1160,6 +1250,11 @@ export function useLunemirRuntime() {
       secondaryKeys: [...entry.secondaryKeys],
       content: entry.content.trim(),
       insertionOrder: index,
+      scanDepth: Math.min(100, Math.max(1, Math.round(entry.scanDepth ?? 12))),
+      probability: Math.min(100, Math.max(0, Math.round(entry.probability ?? 100))),
+      useProbability: Boolean(entry.useProbability),
+      recursive: Boolean(entry.recursive),
+      tokenBudget: Math.max(0, Math.round(entry.tokenBudget ?? 0)),
       extensions: { ...entry.extensions },
     }));
     if (entries.length === 0) {
@@ -1237,6 +1332,11 @@ export function useLunemirRuntime() {
       insertion_order: entry.insertionOrder,
       disable: !entry.enabled,
       case_sensitive: entry.caseSensitive,
+      scan_depth: entry.scanDepth ?? 12,
+      probability: entry.probability ?? 100,
+      useProbability: entry.useProbability ?? false,
+      recursive_scanning: entry.recursive ?? false,
+      token_budget: entry.tokenBudget ?? 0,
       extensions: entry.extensions,
     }]));
     const payload = { ...lorebook.raw, name: lorebook.name, entries };
@@ -1656,6 +1756,9 @@ export function useLunemirRuntime() {
     addMemoryCandidate,
     approveMemory: (memoryId: string) => setMemoryStatus(memoryId, "approved"),
     removeMemory: (memoryId: string) => setMemoryStatus(memoryId, "remove"),
+    saveAuthorNote,
+    saveStorySummary,
+    generateStorySummaryDraft,
     toggleLorebookAssignment,
     saveLorebookProfile,
     saveCharacterLorebook,

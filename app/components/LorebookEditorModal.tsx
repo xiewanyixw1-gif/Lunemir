@@ -27,6 +27,11 @@ function createEmptyEntry(index: number): LorebookEntry {
     priority: 50,
     insertionOrder: index,
     caseSensitive: false,
+    scanDepth: 12,
+    probability: 100,
+    useProbability: false,
+    recursive: false,
+    tokenBudget: 0,
     extensions: {},
   };
 }
@@ -40,6 +45,11 @@ function cloneEntries(entries: LorebookEntry[]) {
     ...entry,
     keys: [...entry.keys],
     secondaryKeys: [...entry.secondaryKeys],
+    scanDepth: entry.scanDepth ?? 12,
+    probability: entry.probability ?? 100,
+    useProbability: entry.useProbability ?? false,
+    recursive: entry.recursive ?? false,
+    tokenBudget: entry.tokenBudget ?? 0,
     extensions: { ...entry.extensions },
   }));
 }
@@ -185,6 +195,9 @@ export function LorebookEditorModal({ lorebook, onClose, onSave, onDuplicate, on
                   <label className="wide"><span>注入内容</span><textarea value={activeEntry.content} onChange={(event) => updateEntry({ content: event.target.value })} rows={10} placeholder="模型需要知道的世界设定、人物关系或事件事实…" /></label>
                   <label><span>优先级</span><input type="number" min={-1000} max={1000} value={activeEntry.priority} onChange={(event) => updateEntry({ priority: Number(event.target.value) })} /></label>
                   <label><span>顺序</span><input value={activeIndex + 1} disabled aria-label="当前插入顺序" /></label>
+                  <label><span>扫描深度</span><input type="number" min={1} max={100} value={activeEntry.scanDepth ?? 12} onChange={(event) => updateEntry({ scanDepth: Number(event.target.value) })} /><small>只扫描最近多少条消息</small></label>
+                  <label><span>触发概率 %</span><input type="number" min={0} max={100} value={activeEntry.probability ?? 100} onChange={(event) => updateEntry({ probability: Number(event.target.value) })} disabled={!activeEntry.useProbability} /><small>同一段上下文结果保持稳定</small></label>
+                  <label><span>条目 Token 预算</span><input type="number" min={0} max={32000} value={activeEntry.tokenBudget ?? 0} onChange={(event) => updateEntry({ tokenBudget: Number(event.target.value) })} /><small>0 表示不限制</small></label>
                 </div>
 
                 <div className="lorebook-switches">
@@ -192,6 +205,8 @@ export function LorebookEditorModal({ lorebook, onClose, onSave, onDuplicate, on
                   <label><input type="checkbox" checked={activeEntry.constant} onChange={(event) => updateEntry({ constant: event.target.checked })} /><span><strong>常驻</strong><small>无需关键词也会注入</small></span></label>
                   <label><input type="checkbox" checked={activeEntry.selective} onChange={(event) => updateEntry({ selective: event.target.checked })} /><span><strong>组合触发</strong><small>主要与次要关键词同时命中</small></span></label>
                   <label><input type="checkbox" checked={activeEntry.caseSensitive} onChange={(event) => updateEntry({ caseSensitive: event.target.checked })} /><span><strong>区分大小写</strong><small>适合英文专有名词</small></span></label>
+                  <label><input type="checkbox" checked={activeEntry.useProbability ?? false} onChange={(event) => updateEntry({ useProbability: event.target.checked })} /><span><strong>概率触发</strong><small>按上方概率稳定判断</small></span></label>
+                  <label><input type="checkbox" checked={activeEntry.recursive ?? false} onChange={(event) => updateEntry({ recursive: event.target.checked })} /><span><strong>递归触发</strong><small>允许已命中条目触发本条目</small></span></label>
                 </div>
               </div>
             )}
