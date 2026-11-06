@@ -206,6 +206,7 @@ export type StorySummary = {
 export type StoryState = {
   currentTime: string;
   location: string;
+  weather: string;
   scene: string;
   npcInitiative: number;
   cooldownMinutes: number;
@@ -293,6 +294,7 @@ export type AppearanceSettings = {
   showCharacterName: boolean;
   showUserName: boolean;
   showTimestamp: boolean;
+  showSceneHeader: boolean;
   avatarLayout: "side" | "header";
   avatarShape: "circle" | "square" | "rounded";
   avatarSize: number;

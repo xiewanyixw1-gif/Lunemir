@@ -169,6 +169,7 @@ export function compileContext(
     ? [
         `当前剧情时间：${new Date(options.storyState.currentTime).toLocaleString("zh-CN")}`,
         options.storyState.location && `当前地点：${options.storyState.location}`,
+        options.storyState.weather && `当前天气：${options.storyState.weather}`,
         options.storyState.scene && `当前场景：${options.storyState.scene}`,
       ].filter(Boolean).join("\n")
     : "";

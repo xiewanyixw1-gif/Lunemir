@@ -65,6 +65,15 @@ function messageDayLabel(value: string) {
   return sameDay ? "今天" : date.toLocaleDateString("zh-CN", { month: "long", day: "numeric", weekday: "short" });
 }
 
+function storyClockParts(value?: string) {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return { date: "", time: "" };
+  return {
+    date: date.toLocaleDateString("zh-CN", { year: "numeric", month: "long", day: "numeric", weekday: "short" }),
+    time: date.toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false }),
+  };
+}
+
 type LibraryAction = {
   label: string;
   onSelect: () => void | Promise<void>;
@@ -134,6 +143,7 @@ export function LunemirPrototype() {
   const [editingMessageText, setEditingMessageText] = useState("");
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
+  const [sceneHeaderCompact, setSceneHeaderCompact] = useState(false);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
@@ -168,6 +178,8 @@ export function LunemirPrototype() {
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
   const activeConversationTitle = replaceRoleMacros(runtime.activeConversation?.title ?? "当前剧情", activeName, runtime.activePersona?.name ?? "用户");
+  const storyClock = storyClockParts(runtime.storyState?.currentTime);
+  const sceneSummary = replaceRoleMacros(runtime.storyState?.scene ?? "", activeName, runtime.activePersona?.name ?? "用户");
   const greetingOptions = useMemo(
     () => [...new Set([
       runtime.activeCharacter?.firstMessage ?? "",
@@ -459,10 +471,10 @@ export function LunemirPrototype() {
             <button className="navigation-trigger" type="button" onClick={() => setNavigationOpen(true)} aria-label="打开主菜单" aria-expanded={navigationOpen}>
               <i /><i /><i />
             </button>
-            {section === "chat" ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span>}
+            {section === "chat" && !runtime.appearance.showSceneHeader ? <CharacterOrb small avatarDataUrl={runtime.activeCharacter?.avatarDataUrl} name={activeName} /> : section !== "chat" ? <span className="section-glyph">{navItems.find((item) => item.id === section)?.icon}</span> : null}
             <div>
-              <p>{section === "chat" ? activeConversationTitle : "LUNEMIR"}</p>
-              <h1>{section === "chat" ? activeName : pageTitle}</h1>
+              <p>{section === "chat" ? runtime.appearance.showSceneHeader ? "LUNEMIR STORY" : activeConversationTitle : "LUNEMIR"}</p>
+              <h1>{section === "chat" ? runtime.appearance.showSceneHeader ? activeConversationTitle : activeName : pageTitle}</h1>
             </div>
           </div>
           <div className="top-actions">
@@ -493,8 +505,34 @@ export function LunemirPrototype() {
                 const nearLatest = target.scrollHeight - target.scrollTop - target.clientHeight < 140;
                 followOutputRef.current = nearLatest;
                 setShowJumpToLatest(!nearLatest);
+                setSceneHeaderCompact(target.scrollTop > 84);
               }}
             >
+              {runtime.appearance.showSceneHeader && runtime.storyState ? (
+                <section className={sceneHeaderCompact ? "scene-story-header is-compact" : "scene-story-header"} aria-label="当前剧情场景">
+                  <div className="scene-story-identity">
+                    {runtime.appearance.showCharacterAvatar ? (
+                      <span className="scene-story-avatar" style={runtime.activeCharacter?.avatarDataUrl ? { backgroundImage: `url(${runtime.activeCharacter.avatarDataUrl})` } : undefined}>
+                        {runtime.activeCharacter?.avatarDataUrl ? "" : activeName.charAt(0).toUpperCase()}
+                      </span>
+                    ) : null}
+                    <div>
+                      <span className="scene-story-eyebrow">CURRENT SCENE</span>
+                      <strong>{activeName}</strong>
+                      <small>{activeConversationTitle}</small>
+                    </div>
+                  </div>
+                  <div className="scene-story-state">
+                    <div className="scene-story-clock"><strong>{storyClock.time}</strong><span>{storyClock.date}</span></div>
+                    <div className="scene-story-meta">
+                      {runtime.storyState.location ? <span><i aria-hidden="true">⌖</i>{runtime.storyState.location}</span> : null}
+                      {runtime.storyState.weather ? <span><i aria-hidden="true">☾</i>{runtime.storyState.weather}</span> : null}
+                    </div>
+                    {sceneSummary ? <p>{sceneSummary}</p> : null}
+                  </div>
+                  <button type="button" onClick={() => setStoryTimelineOpen(true)} aria-label="编辑剧情时间、地点、天气与场景">编辑</button>
+                </section>
+              ) : null}
               {runtime.messages.length === 0 && <div className="empty-chat"><span>◌</span><strong>故事还没有开始</strong><p>发送第一条消息，或为角色设置一条开场白。</p></div>}
               {runtime.messages.map((message, index) => {
                 const isUser = message.role === "user";

@@ -9,7 +9,7 @@ type StoryTimelineProps = {
   npcStatus: "idle" | "checking" | "linked" | "cooldown" | "skipped" | "error";
   npcMessage: string;
   onClose: () => void;
-  onSaveState: (values: Pick<StoryState, "currentTime" | "location" | "scene" | "npcInitiative" | "cooldownMinutes">) => Promise<boolean>;
+  onSaveState: (values: Pick<StoryState, "currentTime" | "location" | "weather" | "scene" | "npcInitiative" | "cooldownMinutes">) => Promise<boolean>;
   onAdvanceTime: (minutes: number) => Promise<boolean>;
   onCheckNpc: () => Promise<boolean | void>;
   onRevertEvent: (eventId: string) => Promise<boolean>;
@@ -32,6 +32,7 @@ const eventLabels: Record<StoryEvent["eventType"], string> = {
 export function StoryTimelineModal({ storyState, storyEvents, npcStatus, npcMessage, onClose, onSaveState, onAdvanceTime, onCheckNpc, onRevertEvent }: StoryTimelineProps) {
   const [currentTime, setCurrentTime] = useState(() => toLocalDateTime(storyState.currentTime));
   const [location, setLocation] = useState(storyState.location);
+  const [weather, setWeather] = useState(storyState.weather);
   const [scene, setScene] = useState(storyState.scene);
   const [initiative, setInitiative] = useState(storyState.npcInitiative);
   const [cooldown, setCooldown] = useState(storyState.cooldownMinutes);
@@ -52,6 +53,7 @@ export function StoryTimelineModal({ storyState, storyEvents, npcStatus, npcMess
       const saved = await onSaveState({
         currentTime: parsedTime.toISOString(),
         location: location.trim(),
+        weather: weather.trim(),
         scene: scene.trim(),
         npcInitiative: initiative,
         cooldownMinutes: cooldown,
@@ -107,6 +109,7 @@ export function StoryTimelineModal({ storyState, storyEvents, npcStatus, npcMess
               <div className="story-state-fields">
                 <label><span>剧情日期与时间</span><input type="datetime-local" value={currentTime} onChange={(event) => setCurrentTime(event.target.value)} /></label>
                 <label><span>当前地点</span><input value={location} onChange={(event) => setLocation(event.target.value)} maxLength={120} placeholder="例如：月港旧钟塔" /></label>
+                <label><span>天气 / 环境</span><input value={weather} onChange={(event) => setWeather(event.target.value)} maxLength={80} placeholder="例如：小雪 · -2°C" /></label>
                 <label className="wide"><span>当前场景</span><textarea value={scene} onChange={(event) => setScene(event.target.value)} rows={4} maxLength={1200} placeholder="记录此刻明确成立的场景状态。" /></label>
                 <label><span>NPC 主动性 · {initiative}</span><input type="range" min={0} max={100} value={initiative} onChange={(event) => setInitiative(Number(event.target.value))} /></label>
                 <label><span>主动联系冷却（分钟）</span><input type="number" min={0} max={10080} value={cooldown} onChange={(event) => setCooldown(Number(event.target.value))} /></label>

@@ -15,6 +15,7 @@ export function createDefaultStoryState(character: CharacterRecord, initialTime 
   return {
     currentTime,
     location: "",
+    weather: "",
     scene: character.scenario.trim(),
     npcInitiative: 65,
     cooldownMinutes: 120,
@@ -28,6 +29,7 @@ export function normalizeStoryState(value: StoryState | undefined, character: Ch
   return {
     currentTime,
     location: value?.location?.trim() ?? fallback.location,
+    weather: value?.weather?.trim() ?? fallback.weather,
     scene: value?.scene?.trim() ?? fallback.scene,
     npcInitiative: Math.min(100, Math.max(0, Number.isFinite(value?.npcInitiative) ? Number(value?.npcInitiative) : fallback.npcInitiative)),
     cooldownMinutes: Math.min(10080, Math.max(0, Number.isFinite(value?.cooldownMinutes) ? Number(value?.cooldownMinutes) : fallback.cooldownMinutes)),

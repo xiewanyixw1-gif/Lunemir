@@ -146,6 +146,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
     showCharacterName: value?.showCharacterName ?? DEFAULT_APPEARANCE.showCharacterName,
     showUserName: value?.showUserName ?? DEFAULT_APPEARANCE.showUserName,
     showTimestamp: value?.showTimestamp ?? DEFAULT_APPEARANCE.showTimestamp,
+    showSceneHeader: value?.showSceneHeader ?? DEFAULT_APPEARANCE.showSceneHeader,
     avatarLayout: value?.avatarLayout === "side" ? "side" : DEFAULT_APPEARANCE.avatarLayout,
     avatarShape: value?.avatarShape === "circle" || value?.avatarShape === "square"
       ? value.avatarShape
@@ -877,7 +878,7 @@ export function useLunemirRuntime() {
     return true;
   }
 
-  async function saveStoryState(values: Pick<StoryState, "currentTime" | "location" | "scene" | "npcInitiative" | "cooldownMinutes">) {
+  async function saveStoryState(values: Pick<StoryState, "currentTime" | "location" | "weather" | "scene" | "npcInitiative" | "cooldownMinutes">) {
     const character = activeCharacter;
     if (!character || !conversation) return false;
     setRuntimeError("");
@@ -886,6 +887,7 @@ export function useLunemirRuntime() {
     const changes = [
       currentState.currentTime !== nextState.currentTime ? `时间改为 ${new Date(nextState.currentTime).toLocaleString("zh-CN")}` : "",
       currentState.location !== nextState.location ? `地点改为 ${nextState.location || "未设定"}` : "",
+      currentState.weather !== nextState.weather ? `天气改为 ${nextState.weather || "未设定"}` : "",
       currentState.scene !== nextState.scene ? `场景改为 ${nextState.scene || "未设定"}` : "",
       currentState.npcInitiative !== nextState.npcInitiative ? `主动性 ${nextState.npcInitiative}` : "",
       currentState.cooldownMinutes !== nextState.cooldownMinutes ? `冷却 ${nextState.cooldownMinutes} 分钟` : "",

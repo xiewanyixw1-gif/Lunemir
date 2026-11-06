@@ -384,15 +384,21 @@ test("persists one story clock and drives bounded NPC initiative checks", async 
     readFile(new URL("app/globals.css", root), "utf8"),
   ]);
   assert.match(types, /type StoryState/);
+  assert.match(types, /weather: string/);
   assert.match(types, /time_advanced/);
   assert.match(events, /normalizeStoryState/);
   assert.match(runtime, /advanceStoryTime/);
   assert.match(runtime, /cooldownMinutes/);
   assert.match(runtime, /revertStoryEvent/);
   assert.match(context, /统一剧情状态/);
+  assert.match(context, /当前天气/);
   assert.match(timeline, /一次推进只触发一次受控检查/);
+  assert.match(timeline, /天气 \/ 环境/);
   assert.match(prototype, /剧情时间与事件/);
+  assert.match(prototype, /scene-story-header/);
+  assert.match(prototype, /setSceneHeaderCompact/);
   assert.match(styles, /story-timeline-layout/);
+  assert.match(styles, /scene-story-header\.is-compact/);
 });
 
 test("resolves persona macros and supports portrait-above-text appearance", async () => {
