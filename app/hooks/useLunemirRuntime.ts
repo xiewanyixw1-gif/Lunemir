@@ -16,6 +16,7 @@ import {
   deleteLorebook as removeStoredLorebook,
   deletePersona as removeStoredPersona,
   deletePreset as removeStoredPreset,
+  deleteProviderApiKey,
   deleteStoryEvents,
   getSettings,
   listAllConversations,
@@ -25,6 +26,7 @@ import {
   listLorebooks,
   listPersonas,
   listPresets,
+  listProviderApiKeys,
   listStoryEvents,
   restoreBackup,
   saveCharacter,
@@ -32,6 +34,7 @@ import {
   saveLorebook,
   savePersona,
   savePreset,
+  saveProviderApiKey,
   saveSettings,
   saveStoryEvent,
 } from "../../lib/lunemir/storage";
@@ -391,12 +394,13 @@ export function useLunemirRuntime() {
   }, [refreshContext]);
 
   const reloadAll = useCallback(async () => {
-    const [storedCharacterRecords, storedLorebooks, storedPersonaRecords, storedPresets, settings] = await Promise.all([
+    const [storedCharacterRecords, storedLorebooks, storedPersonaRecords, storedPresets, settings, storedProviderApiKeys] = await Promise.all([
       listCharacters(),
       listLorebooks(),
       listPersonas(),
       listPresets(),
       getSettings(),
+      listProviderApiKeys(),
     ]);
     let storedCharacters = await Promise.all(storedCharacterRecords.map(async (character) => {
       let repaired: CharacterRecord = {
@@ -468,9 +472,11 @@ export function useLunemirRuntime() {
     setActiveModelProfileId(activeModelProfile.id);
     contextLimitRef.current = activeModelProfile.config.contextLimit;
     setModelConfig(activeModelProfile.config);
+    setModelApiKeys(Object.fromEntries(storedModelProfiles.map((profile) => [profile.id, storedProviderApiKeys[profile.id] ?? ""])));
     setImageModelProfiles(storedImageProfiles);
     setActiveImageModelProfileId(activeImageProfile.id);
     setImageModelConfig(activeImageProfile.config);
+    setImageApiKeys(Object.fromEntries(storedImageProfiles.map((profile) => [profile.id, storedProviderApiKeys[profile.id] ?? ""])));
     if (settings.activePersonaId !== selectedPersona.id) {
       await saveSettings({ ...settings, activePersonaId: selectedPersona.id, updatedAt: new Date().toISOString() });
     }
@@ -1974,10 +1980,12 @@ export function useLunemirRuntime() {
 
   function updateModelConfig(nextConfig: ModelConfig) {
     const normalized = normalizeModelConfig(nextConfig);
+    const modelListChanged = normalized.baseUrl !== modelConfig.baseUrl || normalized.modelsPath !== modelConfig.modelsPath;
+    const connectionChanged = modelListChanged || normalized.chatCompletionsPath !== modelConfig.chatCompletionsPath;
     setModelConfig(normalized);
     setModelProfiles((profiles) => syncModelProfileList(profiles, activeModelProfileId, normalized));
-    setAvailableModels([]);
-    setConnectionStatus("idle");
+    if (modelListChanged) setAvailableModels([]);
+    if (connectionChanged) setConnectionStatus("idle");
   }
 
   function updateApiKey(value: string) {
@@ -2032,22 +2040,26 @@ export function useLunemirRuntime() {
     setModelConfig(next.config);
     setAvailableModels([]);
     setConnectionStatus("idle");
+    await deleteProviderApiKey(activeModelProfileId);
     await persistProviderProfiles(remaining, next.id, next.config, syncImageProfileList(), activeImageModelProfileId);
   }
 
   async function saveModel() {
     const nextProfiles = syncModelProfileList();
     setModelProfiles(nextProfiles);
+    await saveProviderApiKey(activeModelProfileId, apiKey);
     await persistProviderProfiles(nextProfiles, activeModelProfileId, modelConfig, syncImageProfileList(), activeImageModelProfileId);
     setRuntimeError("");
   }
 
   function updateImageModelConfig(nextConfig: ImageModelConfig) {
     const normalized = normalizeImageModelConfig(nextConfig);
+    const modelListChanged = normalized.baseUrl !== imageModelConfig.baseUrl || normalized.modelsPath !== imageModelConfig.modelsPath;
+    const connectionChanged = modelListChanged || normalized.generationsPath !== imageModelConfig.generationsPath;
     setImageModelConfig(normalized);
     setImageModelProfiles((profiles) => syncImageProfileList(profiles, activeImageModelProfileId, normalized));
-    setAvailableImageModels([]);
-    setImageConnectionStatus("idle");
+    if (modelListChanged) setAvailableImageModels([]);
+    if (connectionChanged) setImageConnectionStatus("idle");
   }
 
   function updateImageApiKey(value: string) {
@@ -2102,12 +2114,14 @@ export function useLunemirRuntime() {
     setImageModelConfig(next.config);
     setAvailableImageModels([]);
     setImageConnectionStatus("idle");
+    await deleteProviderApiKey(activeImageModelProfileId);
     await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, remaining, next.id);
   }
 
   async function saveImageModel() {
     const nextProfiles = syncImageProfileList();
     setImageModelProfiles(nextProfiles);
+    await saveProviderApiKey(activeImageModelProfileId, imageApiKey);
     await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, nextProfiles, activeImageModelProfileId);
     setRuntimeError("");
   }

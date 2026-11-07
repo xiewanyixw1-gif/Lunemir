@@ -494,13 +494,14 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
 });
 
 test("supports multiple API provider presets, flexible model discovery, and real image generation", async () => {
-  const [prototype, styles, types, defaults, runtime, client] = await Promise.all([
+  const [prototype, styles, types, defaults, runtime, client, storage] = await Promise.all([
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
     readFile(new URL("app/globals.css", root), "utf8"),
     readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
     readFile(new URL("lib/lunemir/defaults.ts", root), "utf8"),
     readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
     readFile(new URL("lib/lunemir/model-client.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/storage.ts", root), "utf8"),
   ]);
   assert.match(types, /export type ModelProfile/);
   assert.match(types, /export type ImageModelProfile/);
@@ -511,9 +512,17 @@ test("supports multiple API provider presets, flexible model discovery, and real
   assert.match(runtime, /createModelProfile/);
   assert.match(runtime, /createImageModelProfile/);
   assert.match(runtime, /modelApiKeys/);
+  assert.match(runtime, /saveProviderApiKey/);
+  assert.match(runtime, /const modelListChanged = normalized\.baseUrl/);
   assert.match(prototype, /新增站点/);
   assert.match(prototype, /新增生图站点/);
+  assert.match(prototype, /尚未拉取模型/);
+  assert.match(prototype, /拉取模型/);
   assert.match(prototype, /生成图片/);
   assert.match(styles, /provider-profile-toolbar/);
+  assert.match(styles, /settings-card input,.settings-card select,.settings-card textarea\{font-size:16px\}/);
   assert.match(styles, /phone-image-result/);
+  assert.match(storage, /DATABASE_VERSION = 5/);
+  assert.match(storage, /providerSecrets/);
+  assert.doesNotMatch(storage.slice(storage.indexOf("createBackup"), storage.indexOf("type RestorableBackup")), /listProviderApiKeys/);
 });

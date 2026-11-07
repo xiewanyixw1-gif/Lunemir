@@ -11,7 +11,7 @@ import type {
 } from "./types";
 
 const DATABASE_NAME = "lunemir";
-const DATABASE_VERSION = 4;
+const DATABASE_VERSION = 5;
 const CHARACTER_STORE = "characters";
 const CONVERSATION_STORE = "conversations";
 const SETTINGS_STORE = "settings";
@@ -19,6 +19,7 @@ const LOREBOOK_STORE = "lorebooks";
 const PERSONA_STORE = "personas";
 const PRESET_STORE = "presets";
 const STORY_EVENT_STORE = "storyEvents";
+const PROVIDER_SECRET_STORE = "providerSecrets";
 
 let databasePromise: Promise<IDBDatabase> | null = null;
 
@@ -74,6 +75,9 @@ export function openLunemirDatabase() {
         if (!database.objectStoreNames.contains(STORY_EVENT_STORE)) {
           const storyEvents = database.createObjectStore(STORY_EVENT_STORE, { keyPath: "id" });
           storyEvents.createIndex("storyId", "storyId", { unique: false });
+        }
+        if (!database.objectStoreNames.contains(PROVIDER_SECRET_STORE)) {
+          database.createObjectStore(PROVIDER_SECRET_STORE, { keyPath: "id" });
         }
       };
 
@@ -216,6 +220,21 @@ export async function getSettings(): Promise<PersistedSettings> {
 
 export function saveSettings(settings: PersistedSettings) {
   return put(SETTINGS_STORE, settings);
+}
+
+export async function listProviderApiKeys() {
+  const records = await getAll<{ id: string; apiKey: string }>(PROVIDER_SECRET_STORE);
+  return Object.fromEntries(records.filter((record) => record.apiKey).map((record) => [record.id, record.apiKey]));
+}
+
+export function saveProviderApiKey(profileId: string, apiKey: string) {
+  const normalized = apiKey.trim();
+  if (!normalized) return remove(PROVIDER_SECRET_STORE, profileId);
+  return put(PROVIDER_SECRET_STORE, { id: profileId, apiKey: normalized, updatedAt: new Date().toISOString() });
+}
+
+export function deleteProviderApiKey(profileId: string) {
+  return remove(PROVIDER_SECRET_STORE, profileId);
 }
 
 export async function createBackup(): Promise<LunemirBackup> {
