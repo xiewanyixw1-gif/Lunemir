@@ -104,7 +104,7 @@ test("supports real character cards and compatible streaming", async () => {
   assert.match(importer, /chunks\.get\("ccv3"\) \?\? chunks\.get\("chara"\)/);
   assert.match(importer, /chara_card_v3/);
   assert.match(importer, /chara_card_v2/);
-  assert.match(client, /\/chat\/completions/);
+  assert.match(client, /config\.chatCompletionsPath/);
   assert.match(client, /text\/event-stream/);
   assert.match(context, /matchedLore/);
   assert.match(context, /estimatedTokens/);
@@ -471,7 +471,7 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
   assert.match(prototype, /runtime\.sendPhoneMessageToStory/);
   assert.match(prototype, /runtime\.activatePreset/);
   assert.match(prototype, /生图工作室/);
-  assert.match(prototype, /不会用假图片冒充生成结果/);
+  assert.match(prototype, /runtime\.generateImage\(imagePrompt\)/);
   assert.match(styles, /Lunemir Phone OS/);
   assert.match(styles, /phone-conversation-list/);
   assert.match(styles, /aspect-ratio:350\/720/);
@@ -491,4 +491,29 @@ test("ships a resizable iOS-inspired phone shell with real story-linked apps", a
   assert.match(runtime, /phoneScale: clamp/);
   assert.match(prototype, /恢复默认大小/);
   assert.match(styles, /contain:layout size style/);
+});
+
+test("supports multiple API provider presets, flexible model discovery, and real image generation", async () => {
+  const [prototype, styles, types, defaults, runtime, client] = await Promise.all([
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/defaults.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/model-client.ts", root), "utf8"),
+  ]);
+  assert.match(types, /export type ModelProfile/);
+  assert.match(types, /export type ImageModelProfile/);
+  assert.match(defaults, /DEFAULT_IMAGE_MODEL_CONFIG/);
+  assert.match(client, /resolveApiEndpoint/);
+  assert.match(client, /root\.models/);
+  assert.match(client, /export async function generateImage/);
+  assert.match(runtime, /createModelProfile/);
+  assert.match(runtime, /createImageModelProfile/);
+  assert.match(runtime, /modelApiKeys/);
+  assert.match(prototype, /新增站点/);
+  assert.match(prototype, /新增生图站点/);
+  assert.match(prototype, /生成图片/);
+  assert.match(styles, /provider-profile-toolbar/);
+  assert.match(styles, /phone-image-result/);
 });

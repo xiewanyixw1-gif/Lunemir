@@ -1,11 +1,23 @@
-import type { AppearanceSettings, CharacterRecord, ModelConfig, PersonaRecord } from "./types";
+import type { AppearanceSettings, CharacterRecord, ImageModelConfig, ModelConfig, PersonaRecord } from "./types";
 
 export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   baseUrl: "",
+  modelsPath: "/models",
+  chatCompletionsPath: "/chat/completions",
   model: "",
   temperature: 0.8,
   maxTokens: 1200,
   contextLimit: 32000,
+};
+
+export const DEFAULT_IMAGE_MODEL_CONFIG: ImageModelConfig = {
+  baseUrl: "",
+  modelsPath: "/models",
+  generationsPath: "/images/generations",
+  model: "",
+  size: "1024x1024",
+  quality: "standard",
+  style: "",
 };
 
 export const DEFAULT_APPEARANCE: AppearanceSettings = {

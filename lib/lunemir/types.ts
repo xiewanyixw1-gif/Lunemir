@@ -258,10 +258,43 @@ export type StoryEvent = {
 
 export type ModelConfig = {
   baseUrl: string;
+  modelsPath: string;
+  chatCompletionsPath: string;
   model: string;
   temperature: number;
   maxTokens: number;
   contextLimit: number;
+};
+
+export type ModelProfile = {
+  id: string;
+  name: string;
+  config: ModelConfig;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ImageModelConfig = {
+  baseUrl: string;
+  modelsPath: string;
+  generationsPath: string;
+  model: string;
+  size: string;
+  quality: string;
+  style: string;
+};
+
+export type ImageModelProfile = {
+  id: string;
+  name: string;
+  config: ImageModelConfig;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GeneratedImage = {
+  imageUrl: string;
+  revisedPrompt?: string;
 };
 
 export type AppearanceSettings = {
@@ -325,6 +358,10 @@ export type PersistedSettings = {
   lorebookAssignments?: Record<string, string[]>;
   appearance?: AppearanceSettings;
   model: ModelConfig;
+  modelProfiles?: ModelProfile[];
+  activeModelProfileId?: string;
+  imageModelProfiles?: ImageModelProfile[];
+  activeImageModelProfileId?: string;
   updatedAt: string;
 };
 

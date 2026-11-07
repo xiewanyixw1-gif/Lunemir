@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readCharacterGreetings } from "../../lib/lunemir/character-import";
 import { parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext } from "../../lib/lunemir/context";
-import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
-import { generateChatCompletion, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
+import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_IMAGE_MODEL_CONFIG, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
+import { generateChatCompletion, generateImage as requestGeneratedImage, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
 import { replaceRoleMacros } from "../../lib/lunemir/macros";
 import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import { createDefaultStoryState, createStoryEvent, isDuplicatePhoneEvent, normalizeStoryState, parsePhoneMessageProposal } from "../../lib/lunemir/story-events";
@@ -43,9 +43,13 @@ import type {
   ContentImportPreview,
   ContextReport,
   ConversationRecord,
+  GeneratedImage,
+  ImageModelConfig,
+  ImageModelProfile,
   LorebookEditorValues,
   LorebookRecord,
   ModelConfig,
+  ModelProfile,
   PersonaEditorValues,
   PersonaRecord,
   PresetEditorValues,
@@ -180,6 +184,31 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
   };
 }
 
+function normalizeModelConfig(value?: Partial<ModelConfig>): ModelConfig {
+  return {
+    ...DEFAULT_MODEL_CONFIG,
+    ...value,
+    baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
+    modelsPath: typeof value?.modelsPath === "string" && value.modelsPath.trim() ? value.modelsPath : DEFAULT_MODEL_CONFIG.modelsPath,
+    chatCompletionsPath: typeof value?.chatCompletionsPath === "string" && value.chatCompletionsPath.trim() ? value.chatCompletionsPath : DEFAULT_MODEL_CONFIG.chatCompletionsPath,
+    model: typeof value?.model === "string" ? value.model : "",
+  };
+}
+
+function normalizeImageModelConfig(value?: Partial<ImageModelConfig>): ImageModelConfig {
+  return {
+    ...DEFAULT_IMAGE_MODEL_CONFIG,
+    ...value,
+    baseUrl: typeof value?.baseUrl === "string" ? value.baseUrl : "",
+    modelsPath: typeof value?.modelsPath === "string" && value.modelsPath.trim() ? value.modelsPath : DEFAULT_IMAGE_MODEL_CONFIG.modelsPath,
+    generationsPath: typeof value?.generationsPath === "string" && value.generationsPath.trim() ? value.generationsPath : DEFAULT_IMAGE_MODEL_CONFIG.generationsPath,
+    model: typeof value?.model === "string" ? value.model : "",
+    size: typeof value?.size === "string" && value.size.trim() ? value.size : DEFAULT_IMAGE_MODEL_CONFIG.size,
+    quality: typeof value?.quality === "string" ? value.quality : DEFAULT_IMAGE_MODEL_CONFIG.quality,
+    style: typeof value?.style === "string" ? value.style : "",
+  };
+}
+
 export function useLunemirRuntime() {
   const [ready, setReady] = useState(false);
   const [characters, setCharacters] = useState<CharacterRecord[]>([]);
@@ -200,10 +229,20 @@ export function useLunemirRuntime() {
   const [phoneEventStatus, setPhoneEventStatus] = useState<"idle" | "checking" | "linked" | "cooldown" | "skipped" | "error">("idle");
   const [phoneEventMessage, setPhoneEventMessage] = useState("");
   const [modelConfig, setModelConfig] = useState<ModelConfig>(DEFAULT_MODEL_CONFIG);
+  const [modelProfiles, setModelProfiles] = useState<ModelProfile[]>([]);
+  const [activeModelProfileId, setActiveModelProfileId] = useState("");
+  const [modelApiKeys, setModelApiKeys] = useState<Record<string, string>>({});
+  const [imageModelConfig, setImageModelConfig] = useState<ImageModelConfig>(DEFAULT_IMAGE_MODEL_CONFIG);
+  const [imageModelProfiles, setImageModelProfiles] = useState<ImageModelProfile[]>([]);
+  const [activeImageModelProfileId, setActiveImageModelProfileId] = useState("");
+  const [imageApiKeys, setImageApiKeys] = useState<Record<string, string>>({});
   const [appearance, setAppearance] = useState<AppearanceSettings>(DEFAULT_APPEARANCE);
-  const [apiKey, setApiKey] = useState("");
   const [connectionStatus, setConnectionStatus] = useState<"idle" | "testing" | "connected" | "error">("idle");
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [imageConnectionStatus, setImageConnectionStatus] = useState<"idle" | "testing" | "connected" | "error">("idle");
+  const [availableImageModels, setAvailableImageModels] = useState<string[]>([]);
+  const [imageGenerationStatus, setImageGenerationStatus] = useState<"idle" | "generating" | "complete" | "error">("idle");
+  const [generatedImage, setGeneratedImage] = useState<GeneratedImage | null>(null);
   const [importPreview, setImportPreview] = useState<ContentImportPreview | null>(null);
   const [importError, setImportError] = useState("");
   const [runtimeError, setRuntimeError] = useState("");
@@ -228,6 +267,8 @@ export function useLunemirRuntime() {
     lorebooks: LorebookRecord[];
     assignments: Record<string, string[]>;
   }>({ lorebooks: [], assignments: {} });
+  const apiKey = modelApiKeys[activeModelProfileId] ?? "";
+  const imageApiKey = imageApiKeys[activeImageModelProfileId] ?? "";
 
   const activeCharacter = useMemo(
     () => characters.find((character) => character.id === activeCharacterId) ?? characters[0] ?? null,
@@ -412,10 +453,24 @@ export function useLunemirRuntime() {
       storySummary: undefined,
       storyState: undefined,
     };
-    const nextModel = settings.model ?? DEFAULT_MODEL_CONFIG;
+    const now = new Date().toISOString();
+    const legacyModel = normalizeModelConfig(settings.model);
+    const storedModelProfiles = settings.modelProfiles?.length
+      ? settings.modelProfiles.map((profile) => ({ ...profile, name: profile.name || "未命名接口", config: normalizeModelConfig(profile.config) }))
+      : [{ id: "model_profile_default", name: "默认语言接口", config: legacyModel, createdAt: now, updatedAt: now }];
+    const activeModelProfile = storedModelProfiles.find((profile) => profile.id === settings.activeModelProfileId) ?? storedModelProfiles[0];
+    const storedImageProfiles = settings.imageModelProfiles?.length
+      ? settings.imageModelProfiles.map((profile) => ({ ...profile, name: profile.name || "未命名生图接口", config: normalizeImageModelConfig(profile.config) }))
+      : [{ id: "image_profile_default", name: "默认生图接口", config: DEFAULT_IMAGE_MODEL_CONFIG, createdAt: now, updatedAt: now }];
+    const activeImageProfile = storedImageProfiles.find((profile) => profile.id === settings.activeImageModelProfileId) ?? storedImageProfiles[0];
     setAppearance(normalizeAppearance(settings.appearance));
-    contextLimitRef.current = nextModel.contextLimit;
-    setModelConfig(nextModel);
+    setModelProfiles(storedModelProfiles);
+    setActiveModelProfileId(activeModelProfile.id);
+    contextLimitRef.current = activeModelProfile.config.contextLimit;
+    setModelConfig(activeModelProfile.config);
+    setImageModelProfiles(storedImageProfiles);
+    setActiveImageModelProfileId(activeImageProfile.id);
+    setImageModelConfig(activeImageProfile.config);
     if (settings.activePersonaId !== selectedPersona.id) {
       await saveSettings({ ...settings, activePersonaId: selectedPersona.id, updatedAt: new Date().toISOString() });
     }
@@ -1888,9 +1943,172 @@ export function useLunemirRuntime() {
     await applyPresetRecord(preset);
   }
 
-  async function saveModel() {
+  function syncModelProfileList(profiles = modelProfiles, activeId = activeModelProfileId, config = modelConfig) {
+    const now = new Date().toISOString();
+    return profiles.map((profile) => profile.id === activeId ? { ...profile, config: normalizeModelConfig(config), updatedAt: now } : profile);
+  }
+
+  function syncImageProfileList(profiles = imageModelProfiles, activeId = activeImageModelProfileId, config = imageModelConfig) {
+    const now = new Date().toISOString();
+    return profiles.map((profile) => profile.id === activeId ? { ...profile, config: normalizeImageModelConfig(config), updatedAt: now } : profile);
+  }
+
+  async function persistProviderProfiles(
+    nextModelProfiles: ModelProfile[],
+    nextModelProfileId: string,
+    nextModelConfig: ModelConfig,
+    nextImageProfiles: ImageModelProfile[],
+    nextImageProfileId: string,
+  ) {
     const settings = await getSettings();
-    await saveSettings({ ...settings, model: modelConfig, updatedAt: new Date().toISOString() });
+    await saveSettings({
+      ...settings,
+      model: normalizeModelConfig(nextModelConfig),
+      modelProfiles: nextModelProfiles,
+      activeModelProfileId: nextModelProfileId,
+      imageModelProfiles: nextImageProfiles,
+      activeImageModelProfileId: nextImageProfileId,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  function updateModelConfig(nextConfig: ModelConfig) {
+    const normalized = normalizeModelConfig(nextConfig);
+    setModelConfig(normalized);
+    setModelProfiles((profiles) => syncModelProfileList(profiles, activeModelProfileId, normalized));
+    setAvailableModels([]);
+    setConnectionStatus("idle");
+  }
+
+  function updateApiKey(value: string) {
+    setModelApiKeys((keys) => ({ ...keys, [activeModelProfileId]: value }));
+    setConnectionStatus("idle");
+  }
+
+  function renameModelProfile(name: string) {
+    setModelProfiles((profiles) => profiles.map((profile) => profile.id === activeModelProfileId ? { ...profile, name, updatedAt: new Date().toISOString() } : profile));
+  }
+
+  async function selectModelProfile(profileId: string) {
+    const synced = syncModelProfileList();
+    const target = synced.find((profile) => profile.id === profileId);
+    if (!target) return;
+    setModelProfiles(synced);
+    setActiveModelProfileId(target.id);
+    setModelConfig(target.config);
+    setAvailableModels([]);
+    setConnectionStatus("idle");
+    await persistProviderProfiles(synced, target.id, target.config, syncImageProfileList(), activeImageModelProfileId);
+  }
+
+  async function createModelProfile() {
+    const now = new Date().toISOString();
+    const synced = syncModelProfileList();
+    const next: ModelProfile = {
+      id: createId("model-profile"),
+      name: `语言接口 ${synced.length + 1}`,
+      config: { ...DEFAULT_MODEL_CONFIG, temperature: modelConfig.temperature, maxTokens: modelConfig.maxTokens, contextLimit: modelConfig.contextLimit },
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextProfiles = [...synced, next];
+    setModelProfiles(nextProfiles);
+    setActiveModelProfileId(next.id);
+    setModelConfig(next.config);
+    setAvailableModels([]);
+    setConnectionStatus("idle");
+    await persistProviderProfiles(nextProfiles, next.id, next.config, syncImageProfileList(), activeImageModelProfileId);
+  }
+
+  async function deleteModelProfile() {
+    if (modelProfiles.length <= 1) {
+      setRuntimeError("至少保留一个语言模型接口预设。");
+      return;
+    }
+    const remaining = modelProfiles.filter((profile) => profile.id !== activeModelProfileId);
+    const next = remaining[0];
+    setModelProfiles(remaining);
+    setActiveModelProfileId(next.id);
+    setModelConfig(next.config);
+    setAvailableModels([]);
+    setConnectionStatus("idle");
+    await persistProviderProfiles(remaining, next.id, next.config, syncImageProfileList(), activeImageModelProfileId);
+  }
+
+  async function saveModel() {
+    const nextProfiles = syncModelProfileList();
+    setModelProfiles(nextProfiles);
+    await persistProviderProfiles(nextProfiles, activeModelProfileId, modelConfig, syncImageProfileList(), activeImageModelProfileId);
+    setRuntimeError("");
+  }
+
+  function updateImageModelConfig(nextConfig: ImageModelConfig) {
+    const normalized = normalizeImageModelConfig(nextConfig);
+    setImageModelConfig(normalized);
+    setImageModelProfiles((profiles) => syncImageProfileList(profiles, activeImageModelProfileId, normalized));
+    setAvailableImageModels([]);
+    setImageConnectionStatus("idle");
+  }
+
+  function updateImageApiKey(value: string) {
+    setImageApiKeys((keys) => ({ ...keys, [activeImageModelProfileId]: value }));
+    setImageConnectionStatus("idle");
+  }
+
+  function renameImageModelProfile(name: string) {
+    setImageModelProfiles((profiles) => profiles.map((profile) => profile.id === activeImageModelProfileId ? { ...profile, name, updatedAt: new Date().toISOString() } : profile));
+  }
+
+  async function selectImageModelProfile(profileId: string) {
+    const synced = syncImageProfileList();
+    const target = synced.find((profile) => profile.id === profileId);
+    if (!target) return;
+    setImageModelProfiles(synced);
+    setActiveImageModelProfileId(target.id);
+    setImageModelConfig(target.config);
+    setAvailableImageModels([]);
+    setImageConnectionStatus("idle");
+    await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, synced, target.id);
+  }
+
+  async function createImageModelProfile() {
+    const now = new Date().toISOString();
+    const synced = syncImageProfileList();
+    const next: ImageModelProfile = {
+      id: createId("image-profile"),
+      name: `生图接口 ${synced.length + 1}`,
+      config: { ...DEFAULT_IMAGE_MODEL_CONFIG },
+      createdAt: now,
+      updatedAt: now,
+    };
+    const nextProfiles = [...synced, next];
+    setImageModelProfiles(nextProfiles);
+    setActiveImageModelProfileId(next.id);
+    setImageModelConfig(next.config);
+    setAvailableImageModels([]);
+    setImageConnectionStatus("idle");
+    await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, nextProfiles, next.id);
+  }
+
+  async function deleteImageModelProfile() {
+    if (imageModelProfiles.length <= 1) {
+      setRuntimeError("至少保留一个生图接口预设。");
+      return;
+    }
+    const remaining = imageModelProfiles.filter((profile) => profile.id !== activeImageModelProfileId);
+    const next = remaining[0];
+    setImageModelProfiles(remaining);
+    setActiveImageModelProfileId(next.id);
+    setImageModelConfig(next.config);
+    setAvailableImageModels([]);
+    setImageConnectionStatus("idle");
+    await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, remaining, next.id);
+  }
+
+  async function saveImageModel() {
+    const nextProfiles = syncImageProfileList();
+    setImageModelProfiles(nextProfiles);
+    await persistProviderProfiles(syncModelProfileList(), activeModelProfileId, modelConfig, nextProfiles, activeImageModelProfileId);
     setRuntimeError("");
   }
 
@@ -1960,6 +2178,35 @@ export function useLunemirRuntime() {
     } catch (error) {
       setConnectionStatus("error");
       setRuntimeError(error instanceof Error ? error.message : "连接测试失败。");
+    }
+  }
+
+  async function testImageConnection() {
+    setImageConnectionStatus("testing");
+    setRuntimeError("");
+    try {
+      const models = await testModelConnection(imageModelConfig, imageApiKey);
+      setAvailableImageModels(models);
+      setImageConnectionStatus("connected");
+      await saveImageModel();
+    } catch (error) {
+      setImageConnectionStatus("error");
+      setRuntimeError(error instanceof Error ? error.message : "生图接口连接测试失败。");
+    }
+  }
+
+  async function generateImage(prompt: string) {
+    setRuntimeError("");
+    setImageGenerationStatus("generating");
+    try {
+      const result = await requestGeneratedImage({ config: imageModelConfig, apiKey: imageApiKey, prompt });
+      setGeneratedImage(result);
+      setImageGenerationStatus("complete");
+      return true;
+    } catch (error) {
+      setImageGenerationStatus("error");
+      setRuntimeError(error instanceof Error ? error.message : "生图失败。");
+      return false;
     }
   }
 
@@ -2041,11 +2288,31 @@ export function useLunemirRuntime() {
     saveCustomBackground,
     savePhoneWallpaper,
     modelConfig,
-    setModelConfig,
+    setModelConfig: updateModelConfig,
+    modelProfiles,
+    activeModelProfileId,
+    selectModelProfile,
+    createModelProfile,
+    deleteModelProfile,
+    renameModelProfile,
     apiKey,
-    setApiKey,
+    setApiKey: updateApiKey,
     connectionStatus,
     availableModels,
+    imageModelConfig,
+    setImageModelConfig: updateImageModelConfig,
+    imageModelProfiles,
+    activeImageModelProfileId,
+    selectImageModelProfile,
+    createImageModelProfile,
+    deleteImageModelProfile,
+    renameImageModelProfile,
+    imageApiKey,
+    setImageApiKey: updateImageApiKey,
+    imageConnectionStatus,
+    availableImageModels,
+    imageGenerationStatus,
+    generatedImage,
     importPreview,
     importError,
     clearImport: () => { setImportPreview(null); setImportError(""); },
@@ -2101,6 +2368,9 @@ export function useLunemirRuntime() {
     stopGeneration: () => abortRef.current?.abort(),
     saveModel,
     testConnection,
+    saveImageModel,
+    testImageConnection,
+    generateImage,
     downloadBackup,
     downloadConversation,
     restoreFromBackup,

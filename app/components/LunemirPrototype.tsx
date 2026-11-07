@@ -143,6 +143,7 @@ export function LunemirPrototype() {
   const [loreQuery, setLoreQuery] = useState("");
   const [presetQuery, setPresetQuery] = useState("");
   const [draft, setDraft] = useState("");
+  const [imagePrompt, setImagePrompt] = useState("");
   const [editingMessageId, setEditingMessageId] = useState("");
   const [editingMessageText, setEditingMessageText] = useState("");
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
@@ -868,16 +869,26 @@ export function LunemirPrototype() {
 
         {section === "settings" && (
           <div className="content-view settings-view">
-            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>连接你的语言模型</h2><p className="view-description">配置只属于当前浏览器；API Key 不会写入备份，也不会提交到 GitHub。</p></div><span className={`status-pill ${runtime.connectionStatus}`}>{({ idle: "未测试", testing: "测试中", connected: "已连接", error: "连接失败" })[runtime.connectionStatus]}</span></div>
+            <div className="view-heading"><div><span className="eyebrow">MODEL CONNECTION</span><h2>模型与生图接口</h2><p className="view-description">可保存并切换多个站点配置；每个预设的 API Key 仅保留在当前页面内存，不进入备份或 GitHub。</p></div><span className={`status-pill ${runtime.connectionStatus}`}>{({ idle: "语言接口未测试", testing: "语言接口测试中", connected: "语言接口已连接", error: "语言接口失败" })[runtime.connectionStatus]}</span></div>
             <div className="settings-card settings-card-grouped">
               <section className="settings-group">
-                <header><span>01</span><div><strong>接口与模型</strong><small>支持 OpenAI-compatible、Ollama、LM Studio 等兼容地址。</small></div></header>
+                <header><span>01</span><div><strong>语言模型接口预设</strong><small>为不同中转站、本地模型或官方接口分别保存地址、模型与参数。</small></div></header>
+                <div className="provider-profile-toolbar">
+                  <div role="tablist" aria-label="语言模型接口预设">
+                    {runtime.modelProfiles.map((profile) => <button type="button" role="tab" aria-selected={profile.id === runtime.activeModelProfileId} className={profile.id === runtime.activeModelProfileId ? "is-active" : ""} key={profile.id} onClick={() => void runtime.selectModelProfile(profile.id)}><strong>{profile.name}</strong><small>{profile.config.model || "未选模型"}</small></button>)}
+                  </div>
+                  <button type="button" className="provider-profile-add" onClick={() => void runtime.createModelProfile()}>＋ 新增站点</button>
+                </div>
+                <div className="provider-profile-editor">
+                  <label>预设名称<input value={runtime.modelProfiles.find((profile) => profile.id === runtime.activeModelProfileId)?.name ?? ""} onChange={(event) => runtime.renameModelProfile(event.target.value)} maxLength={60} placeholder="例如：OpenRouter / 本地 LM Studio" /></label>
+                  <button type="button" onClick={() => void runtime.deleteModelProfile()} disabled={runtime.modelProfiles.length <= 1}>删除当前预设</button>
+                </div>
                 <div className="settings-field-grid">
-                  <label>接口类型<select value="compatible" disabled><option value="compatible">OpenAI-compatible</option></select></label>
                   <label>API 地址<input type="url" value={runtime.modelConfig.baseUrl} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
                   <label>API Key <small>只保留在当前页面内存</small><input type="password" value={runtime.apiKey} onChange={(event) => runtime.setApiKey(event.target.value)} placeholder="sk-… 或本地服务可留空" autoComplete="off" /></label>
-                  <label>模型 ID <small>{runtime.availableModels.length > 0 ? `已读取 ${runtime.availableModels.length} 个模型` : "测试连接后可读取模型列表"}</small><input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
+                  <label className="wide">模型 ID <small>{runtime.availableModels.length > 0 ? `已读取 ${runtime.availableModels.length} 个模型，可输入关键词选择` : "可手动填写；测试连接后也会读取兼容接口的模型列表"}</small><input value={runtime.modelConfig.model} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, model: event.target.value })} placeholder="model-name" list="available-models" /><datalist id="available-models">{runtime.availableModels.map((model) => <option key={model} value={model} />)}</datalist></label>
                 </div>
+                <details className="provider-endpoints"><summary>自定义兼容端点</summary><div className="settings-field-grid"><label>模型列表端点<input value={runtime.modelConfig.modelsPath} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, modelsPath: event.target.value })} placeholder="/models 或完整 URL" /></label><label>聊天补全端点<input value={runtime.modelConfig.chatCompletionsPath} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, chatCompletionsPath: event.target.value })} placeholder="/chat/completions 或完整 URL" /></label></div></details>
               </section>
               <section className="settings-group">
                 <header><span>02</span><div><strong>生成参数</strong><small>预设可以临时覆盖这些值，原始配置仍会保留。</small></div></header>
@@ -887,7 +898,30 @@ export function LunemirPrototype() {
                   <label>上下文窗口<input type="number" min="1024" step="1" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /><small>例如 65535 或 128000。</small></label>
                 </div>
               </section>
-              <div className="settings-actions"><p><strong>安全提示</strong>：云端接口需要网络和正确的跨域配置；本地模型地址通常是 localhost。</p><div><button onClick={() => void runtime.saveModel()}>保存配置</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在测试…" : "测试并读取模型"}</button></div></div>
+              <div className="settings-actions"><p><strong>语言接口</strong>：模型列表支持常见的 data、models、items 和数组返回结构；浏览器直连仍需要服务端允许 CORS。</p><div><button onClick={() => void runtime.saveModel()}>保存语言预设</button><button className="primary-button" onClick={() => void runtime.testConnection()} disabled={runtime.connectionStatus === "testing"}>{runtime.connectionStatus === "testing" ? "正在读取…" : "测试并读取模型"}</button></div></div>
+              <section className="settings-group image-provider-group">
+                <header><span>03</span><div><strong>生图 API 预设</strong><small>支持 OpenAI-compatible 的 images/generations，并兼容 URL 或 Base64 图片结果。</small></div><em className={`settings-group-status ${runtime.imageConnectionStatus}`}>{({ idle: "未测试", testing: "测试中", connected: "已连接", error: "连接失败" })[runtime.imageConnectionStatus]}</em></header>
+                <div className="provider-profile-toolbar">
+                  <div role="tablist" aria-label="生图接口预设">
+                    {runtime.imageModelProfiles.map((profile) => <button type="button" role="tab" aria-selected={profile.id === runtime.activeImageModelProfileId} className={profile.id === runtime.activeImageModelProfileId ? "is-active" : ""} key={profile.id} onClick={() => void runtime.selectImageModelProfile(profile.id)}><strong>{profile.name}</strong><small>{profile.config.model || "未选模型"}</small></button>)}
+                  </div>
+                  <button type="button" className="provider-profile-add" onClick={() => void runtime.createImageModelProfile()}>＋ 新增生图站点</button>
+                </div>
+                <div className="provider-profile-editor">
+                  <label>预设名称<input value={runtime.imageModelProfiles.find((profile) => profile.id === runtime.activeImageModelProfileId)?.name ?? ""} onChange={(event) => runtime.renameImageModelProfile(event.target.value)} maxLength={60} placeholder="例如：OpenAI Images / SiliconFlow" /></label>
+                  <button type="button" onClick={() => void runtime.deleteImageModelProfile()} disabled={runtime.imageModelProfiles.length <= 1}>删除当前预设</button>
+                </div>
+                <div className="settings-field-grid">
+                  <label>生图 API 地址<input type="url" value={runtime.imageModelConfig.baseUrl} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, baseUrl: event.target.value })} placeholder="https://api.example.com/v1" /></label>
+                  <label>生图 API Key <small>按预设只保留在当前页面内存</small><input type="password" value={runtime.imageApiKey} onChange={(event) => runtime.setImageApiKey(event.target.value)} placeholder="可与语言接口不同" autoComplete="off" /></label>
+                  <label>生图模型 ID <small>{runtime.availableImageModels.length > 0 ? `已读取 ${runtime.availableImageModels.length} 个模型` : "可手动填写或测试读取"}</small><input value={runtime.imageModelConfig.model} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, model: event.target.value })} placeholder="gpt-image-1 / flux…" list="available-image-models" /><datalist id="available-image-models">{runtime.availableImageModels.map((model) => <option key={model} value={model} />)}</datalist></label>
+                  <label>图片尺寸<input value={runtime.imageModelConfig.size} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, size: event.target.value })} placeholder="1024x1024" /></label>
+                  <label>质量<input value={runtime.imageModelConfig.quality} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, quality: event.target.value })} placeholder="standard / hd / high" /></label>
+                  <label>风格<input value={runtime.imageModelConfig.style} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, style: event.target.value })} placeholder="可留空" /></label>
+                </div>
+                <details className="provider-endpoints"><summary>自定义生图端点</summary><div className="settings-field-grid"><label>模型列表端点<input value={runtime.imageModelConfig.modelsPath} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, modelsPath: event.target.value })} placeholder="/models 或完整 URL" /></label><label>图片生成端点<input value={runtime.imageModelConfig.generationsPath} onChange={(event) => runtime.setImageModelConfig({ ...runtime.imageModelConfig, generationsPath: event.target.value })} placeholder="/images/generations 或完整 URL" /></label></div></details>
+                <div className="provider-inline-actions"><p>测试只读取模型列表，不会消耗生图额度；真正生成请在手机“创作”中操作。</p><div><button type="button" onClick={() => void runtime.saveImageModel()}>保存生图预设</button><button type="button" className="primary-button" onClick={() => void runtime.testImageConnection()} disabled={runtime.imageConnectionStatus === "testing"}>{runtime.imageConnectionStatus === "testing" ? "正在读取…" : "测试并读取模型"}</button></div></div>
+              </section>
             </div>
             <div className="data-card">
               <div><span className="eyebrow">LOCAL DATA</span><h3>本地数据与备份</h3><p>角色、聊天、人设、世界书和设置保存在当前浏览器。换设备前导出备份，或从 GitHub 获取代码后再恢复数据。</p></div>
@@ -1039,7 +1073,7 @@ export function LunemirPrototype() {
                 <section className="phone-api-card"><span className={runtime.connectionStatus === "connected" ? "is-connected" : ""}>{runtime.connectionStatus === "connected" ? "已连接" : "未连接"}</span><small>LANGUAGE API</small><strong>{runtime.modelConfig.model || "尚未选择模型"}</strong><p>{runtime.modelConfig.baseUrl || "先在设置中填写兼容接口地址。"}</p><button type="button" onClick={() => openMainSectionFromPhone("settings")}>配置接口</button></section>
                 <div className="phone-studio-heading"><span><strong>对话预设</strong><small>切换会立即影响主剧情与手机消息</small></span><button type="button" onClick={() => openMainSectionFromPhone("presets")}>管理</button></div>
                 <div className="phone-preset-list">{runtime.presets.map((preset) => <button type="button" className={runtime.activePreset?.id === preset.id ? "is-active" : ""} key={preset.id} onClick={() => void runtime.activatePreset(preset.id)}><span><strong>{preset.name}</strong><small>{preset.modules?.filter((module) => module.enabled).length ?? 0} 个启用模块</small></span><i>{runtime.activePreset?.id === preset.id ? "✓" : ""}</i></button>)}{runtime.presets.length === 0 ? <p className="phone-caption">还没有预设，可从主界面的预设库创建或导入。</p> : null}</div>
-                <section className="phone-image-card"><span>IMAGE STUDIO</span><strong>生图工作室</strong><p>这里将单独保存生图接口、尺寸、风格词和负面词预设。当前版本先完成入口与信息架构，不会用假图片冒充生成结果。</p><button type="button" onClick={() => openMainSectionFromPhone("settings")}>准备生图接口</button></section>
+                <section className="phone-image-card"><span>IMAGE STUDIO · {runtime.imageModelProfiles.find((profile) => profile.id === runtime.activeImageModelProfileId)?.name ?? "未配置"}</span><strong>{runtime.imageModelConfig.model || "生图工作室"}</strong><p>调用独立的生图 API；结果只保留在当前页面，除非你主动下载。</p><textarea value={imagePrompt} onChange={(event) => setImagePrompt(event.target.value)} placeholder="描述画面、角色、构图与光线…" rows={4} />{runtime.generatedImage ? <><div className="phone-image-result" style={{ backgroundImage: `url(${JSON.stringify(runtime.generatedImage.imageUrl)})` }} role="img" aria-label="最近生成的图片" />{runtime.generatedImage.revisedPrompt ? <small className="phone-image-revised">{runtime.generatedImage.revisedPrompt}</small> : null}<a href={runtime.generatedImage.imageUrl} target="_blank" rel="noreferrer" download="lunemir-image.png">打开 / 下载图片</a></> : null}<div className="phone-image-actions"><button type="button" onClick={() => openMainSectionFromPhone("settings")}>配置接口</button><button type="button" className="phone-generate-image" onClick={() => void runtime.generateImage(imagePrompt)} disabled={!imagePrompt.trim() || runtime.imageGenerationStatus === "generating"}>{runtime.imageGenerationStatus === "generating" ? "生成中…" : "生成图片"}</button></div></section>
               </div> : null}
 
               {phoneApp === "settings" ? <div className="phone-settings-page">
