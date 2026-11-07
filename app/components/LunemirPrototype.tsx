@@ -636,7 +636,10 @@ export function LunemirPrototype() {
                             {message.editedAt && <em>已编辑</em>}
                             {message.status === "stopped" && <em>已停止</em>}
                             {message.status === "error" && <em>失败</em>}
+                            {message.continuationCount ? <em>已续写 {message.continuationCount} 次</em> : null}
+                            {message.finishReason && ["length", "max_tokens", "max_output_tokens"].includes(message.finishReason) ? <em>仍达到输出上限</em> : null}
                           </header>
+                          {!isUser && message.reasoning?.trim() ? <details className="message-reasoning"><summary><span>✦</span>{message.status === "streaming" ? "正在思考" : "查看思考过程"}</summary><pre>{replaceRoleMacros(message.reasoning, activeName, runtime.activePersona?.name ?? "用户")}</pre></details> : null}
                           {editingMessageId === message.id ? (
                             <div className="message-editor">
                               <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />

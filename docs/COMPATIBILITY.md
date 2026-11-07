@@ -29,12 +29,17 @@ v0.2 支持：
 - 模型列表兼容顶层数组，以及 `data`、`models`、`items`、`result.data`、`result.models` 等常见返回结构；
 - 默认使用 `POST {baseUrl}/chat/completions` 聊天，同时允许自定义聊天端点；
 - 支持 SSE `data:` 流和普通 JSON 回退；
+- 识别 `reasoning_content`、`reasoning`、`thinking`、`reasoning_details` 与回复中的 `<think>` / `<reasoning>` 思考内容，并与最终正文分开展示；
+- 读取 `finish_reason` / `stop_reason`，遇到 `length`、`max_tokens` 或 `max_output_tokens` 时最多自动续写两次；
+- 流结束时会消费没有尾部换行的最后一个 SSE 数据块，避免丢失末段；
 - 支持 Bearer API Key、Temperature、Max Tokens 与上下文窗口配置；
 - 支持浏览器端中止生成；
 - 可建立多个语言模型站点预设并快速切换，旧版单一模型配置会自动迁移为首个预设；
 - 生图接口拥有独立预设，默认调用 `POST {baseUrl}/images/generations`，兼容图片 URL 与 Base64 结果，并允许自定义模型列表和生成端点。
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天或生图、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可手动填写模型 ID 后发起生成。
+
+角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。脚本、表单、媒体、外链资源、事件属性及可能覆盖页面的布局样式不会执行。
 
 ## 独立世界书与预设
 

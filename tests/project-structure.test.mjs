@@ -321,6 +321,9 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(renderer, /likelyUnsafeRegex/);
   assert.match(renderer, /script\|style\|iframe\|object\|embed/);
   assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
+  assert.match(component, /SAFE_HTML_TAGS/);
+  assert.match(component, /new DOMParser/);
+  assert.match(component, /safeHref/);
   assert.match(component, /theater-card/);
   assert.match(editor, /小剧场与输出美化/);
   assert.match(editor, /Regex 美化规则/);
@@ -525,4 +528,27 @@ test("supports multiple API provider presets, flexible model discovery, and real
   assert.match(storage, /DATABASE_VERSION = 5/);
   assert.match(storage, /providerSecrets/);
   assert.doesNotMatch(storage.slice(storage.indexOf("createBackup"), storage.indexOf("type RestorableBackup")), /listProviderApiKeys/);
+});
+
+test("shows model reasoning, safely renders HTML, and continues truncated streams", async () => {
+  const [types, client, runtime, prototype, component, styles] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/model-client.ts", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(types, /reasoning\?: string/);
+  assert.match(types, /finishReason\?: string/);
+  assert.match(client, /reasoning_content/);
+  assert.match(client, /finish_reason/);
+  assert.match(client, /buffer \+= decoder\.decode\(\)/);
+  assert.match(runtime, /AUTO_CONTINUATION_LIMIT = 2/);
+  assert.match(runtime, /splitEmbeddedReasoning/);
+  assert.match(runtime, /上一条回复因输出上限被截断/);
+  assert.match(prototype, /查看思考过程/);
+  assert.match(component, /safeStyleValue/);
+  assert.match(styles, /message-reasoning/);
+  assert.match(styles, /safe-html-content table/);
 });

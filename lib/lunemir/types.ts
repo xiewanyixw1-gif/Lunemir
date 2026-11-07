@@ -167,6 +167,9 @@ export type StoredMessage = {
   id: string;
   role: Role;
   content: string;
+  reasoning?: string;
+  finishReason?: string;
+  continuationCount?: number;
   createdAt: string;
   status?: "complete" | "streaming" | "stopped" | "error";
   editedAt?: string;

@@ -153,23 +153,12 @@ function decodeSafeEntities(value: string) {
 }
 
 function normalizeSafeHtml(value: string) {
-  let output = value
+  const output = value
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>([\s\S]*?)<\/details\s*>/gi, "\n:::theater $1\n$2\n:::\n")
-    .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "\n:::theater $1\n$2\n:::\n")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<hr\s*\/?>/gi, "\n---\n")
-    .replace(/<h([1-3])\b[^>]*>([\s\S]*?)<\/h\1\s*>/gi, (_match, level: string, content: string) => `\n${"#".repeat(Number(level))} ${content}\n`)
-    .replace(/<(strong|b)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "**$2**")
-    .replace(/<(em|i)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "*$2*")
-    .replace(/<code\b[^>]*>([\s\S]*?)<\/code\s*>/gi, "`$1`")
-    .replace(/<li\b[^>]*>([\s\S]*?)<\/li\s*>/gi, "\n- $1")
-    .replace(/<\/p\s*>/gi, "\n\n")
-    .replace(/<\/div\s*>/gi, "\n")
-    .replace(/<[^>]+>/g, "");
-  output = decodeSafeEntities(output);
-  return output.replace(/\n{4,}/g, "\n\n\n").trim();
+    .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*\/?\s*>/gi, "")
+    .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "<details open><summary>$1</summary>$2</details>");
+  return decodeSafeEntities(output).trim();
 }
 
 export type OutputTransformResult = {

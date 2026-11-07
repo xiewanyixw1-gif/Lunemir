@@ -63,6 +63,23 @@ import type {
   StorySummary,
 } from "../../lib/lunemir/types";
 
+const AUTO_CONTINUATION_LIMIT = 2;
+const TRUNCATED_FINISH_REASONS = new Set(["length", "max_tokens", "max_output_tokens"]);
+
+function splitEmbeddedReasoning(value: string) {
+  const reasoning: string[] = [];
+  let content = value.replace(/<(think|thinking|reasoning)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, (_match, _tag: string, body: string) => {
+    if (body.trim()) reasoning.push(body.trim());
+    return "";
+  });
+  const unfinished = content.match(/<(think|thinking|reasoning)\b[^>]*>([\s\S]*)$/i);
+  if (unfinished && !new RegExp(`<\\/${unfinished[1]}\\s*>`, "i").test(unfinished[2])) {
+    if (unfinished[2].trim()) reasoning.push(unfinished[2].trim());
+    content = content.slice(0, unfinished.index);
+  }
+  return { content: content.replace(/\n{3,}/g, "\n\n"), reasoning: reasoning.join("\n\n") };
+}
+
 function initialMessage(character: CharacterRecord, greeting = character.firstMessage): StoredMessage[] {
   const content = greeting.trim();
   if (!content) return [];
@@ -1266,8 +1283,9 @@ export function useLunemirRuntime() {
       ? (sourceMessage.alternatives?.length ? sourceMessage.alternatives : [sourceMessage.content])
       : [];
     const prefix = target.mode === "append" ? target.message.content : "";
+    const reasoningPrefix = target.mode === "append" ? target.message.reasoning ?? "" : "";
     const assistantMessage: StoredMessage = sourceMessage
-      ? { ...sourceMessage, content: prefix, status: "streaming" }
+      ? { ...sourceMessage, content: prefix, reasoning: reasoningPrefix, finishReason: undefined, status: "streaming" }
       : {
           id: createId("message"),
           role: "assistant",
@@ -1287,29 +1305,62 @@ export function useLunemirRuntime() {
     abortRef.current = controller;
     setStreaming(true);
     let assistantText = "";
+    let reasoningText = "";
+    let automaticContinuations = 0;
+    let finalFinishReason: string | null = null;
     let completedForPhoneEvent: StoredMessage[] | null = null;
 
     try {
-      await streamChatCompletion({
-        config: modelConfig,
-        apiKey,
-        messages: target.mode === "append"
-          ? [...compiled.messages, { role: "system", content: "请无缝继续上一条角色回复，不要重复已经写出的内容。" }]
-          : compiled.messages,
-        signal: controller.signal,
-        onDelta: (delta) => {
-          assistantText += delta;
-          setMessages((current) => current.map((message) => message.id === assistantMessage.id
-            ? { ...message, content: `${prefix}${assistantText}` }
-            : message));
-        },
-      });
+      let modelMessages = target.mode === "append"
+        ? [...compiled.messages, { role: "system" as const, content: "请无缝继续上一条角色回复，不要重复已经写出的内容。" }]
+        : compiled.messages;
+
+      while (true) {
+        const result = await streamChatCompletion({
+          config: modelConfig,
+          apiKey,
+          messages: modelMessages,
+          signal: controller.signal,
+          onDelta: (delta) => {
+            assistantText += delta;
+            const embedded = splitEmbeddedReasoning(`${prefix}${assistantText}`);
+            setMessages((current) => current.map((message) => message.id === assistantMessage.id
+              ? { ...message, content: embedded.content, reasoning: [`${reasoningPrefix}${reasoningText}`.trim(), embedded.reasoning].filter(Boolean).join("\n\n") || undefined }
+              : message));
+          },
+          onReasoningDelta: (delta) => {
+            reasoningText += delta;
+            const embedded = splitEmbeddedReasoning(`${prefix}${assistantText}`);
+            setMessages((current) => current.map((message) => message.id === assistantMessage.id
+              ? { ...message, content: embedded.content, reasoning: [`${reasoningPrefix}${reasoningText}`.trim(), embedded.reasoning].filter(Boolean).join("\n\n") || undefined }
+              : message));
+          },
+        });
+        finalFinishReason = result.finishReason;
+        if (!result.finishReason || !TRUNCATED_FINISH_REASONS.has(result.finishReason) || automaticContinuations >= AUTO_CONTINUATION_LIMIT) break;
+        automaticContinuations += 1;
+        const fullContent = splitEmbeddedReasoning(`${prefix}${assistantText}`).content;
+        const continuationMessages = [...compiled.messages];
+        const lastMessage = continuationMessages.at(-1);
+        if (lastMessage?.role === "assistant") {
+          continuationMessages[continuationMessages.length - 1] = { ...lastMessage, content: fullContent };
+        } else {
+          continuationMessages.push({ role: "assistant", content: fullContent });
+        }
+        modelMessages = [...continuationMessages, { role: "system", content: "上一条回复因输出上限被截断。请从中断处直接继续，不要重复已经输出的文字。" }];
+      }
       if (!assistantText.trim()) throw new Error("模型没有返回文本内容。");
-      const completedContent = `${prefix}${assistantText}`;
+      const embeddedResult = splitEmbeddedReasoning(`${prefix}${assistantText}`);
+      const completedContent = embeddedResult.content;
+      const completedReasoning = [`${reasoningPrefix}${reasoningText}`.trim(), embeddedResult.reasoning].filter(Boolean).join("\n\n");
+      const continuationCount = (target.mode === "append" ? (target.message.continuationCount ?? 0) + 1 : 0) + automaticContinuations;
       const completed = visibleMessages.map((message) => message.id === assistantMessage.id
         ? {
             ...message,
             content: completedContent,
+            reasoning: completedReasoning || undefined,
+            finishReason: finalFinishReason ?? undefined,
+            continuationCount: continuationCount || undefined,
             status: "complete" as const,
             ...(target.mode === "replace"
               ? { alternatives: [...previousAlternatives, completedContent], activeAlternative: previousAlternatives.length }
@@ -1326,13 +1377,16 @@ export function useLunemirRuntime() {
       if (target.mode === "new") completedForPhoneEvent = completed;
     } catch (error) {
       const stopped = error instanceof DOMException && error.name === "AbortError";
-      const partialContent = `${prefix}${assistantText}`;
+      const partialResult = splitEmbeddedReasoning(`${prefix}${assistantText}`);
+      const partialContent = partialResult.content;
+      const partialReasoning = [`${reasoningPrefix}${reasoningText}`.trim(), partialResult.reasoning].filter(Boolean).join("\n\n");
       const failed = visibleMessages.map((message) => message.id === assistantMessage.id
         ? target.mode === "replace" && !assistantText
           ? { ...target.message, status: "complete" as const }
           : {
               ...message,
               content: partialContent || (stopped ? "" : "生成失败"),
+              reasoning: partialReasoning || undefined,
               status: stopped ? "stopped" as const : "error" as const,
               ...(target.mode === "replace" && assistantText
                 ? { alternatives: [...previousAlternatives, partialContent], activeAlternative: previousAlternatives.length }

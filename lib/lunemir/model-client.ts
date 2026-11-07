@@ -62,15 +62,51 @@ export async function testModelConnection(config: Pick<ModelConfig, "baseUrl" | 
   return models;
 }
 
-function extractDelta(payload: unknown) {
-  if (!payload || typeof payload !== "object") return "";
+function readTextValue(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const block = value as Record<string, unknown>;
+    return ([block.text, block.content].find((entry) => typeof entry === "string") as string | undefined) ?? "";
+  }
+  if (!Array.isArray(value)) return "";
+  return value.map((item) => {
+    if (typeof item === "string") return item;
+    if (!item || typeof item !== "object") return "";
+    const block = item as Record<string, unknown>;
+    return ([block.text, block.content].find((entry) => typeof entry === "string") as string | undefined) ?? "";
+  }).join("");
+}
+
+function extractResponseParts(payload: unknown) {
+  if (!payload || typeof payload !== "object") return { content: "", reasoning: "", finishReason: null as string | null };
   const choices = (payload as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return "";
-  const choice = choices[0] as { delta?: { content?: unknown }; message?: { content?: unknown }; text?: unknown };
-  if (typeof choice.delta?.content === "string") return choice.delta.content;
-  if (typeof choice.message?.content === "string") return choice.message.content;
-  if (typeof choice.text === "string") return choice.text;
-  return "";
+  if (!Array.isArray(choices) || choices.length === 0) return { content: "", reasoning: "", finishReason: null as string | null };
+  const choice = choices[0] as {
+    delta?: Record<string, unknown>;
+    message?: Record<string, unknown>;
+    text?: unknown;
+    finish_reason?: unknown;
+    stop_reason?: unknown;
+  };
+  const delta = choice.delta ?? {};
+  const message = choice.message ?? {};
+  const content = readTextValue(delta.content) || readTextValue(message.content) || readTextValue(choice.text);
+  const reasoning = [
+    delta.reasoning_content,
+    delta.reasoning,
+    delta.thinking,
+    delta.reasoning_details,
+    message.reasoning_content,
+    message.reasoning,
+    message.thinking,
+    message.reasoning_details,
+  ].map(readTextValue).find(Boolean) ?? "";
+  const rawFinishReason = choice.finish_reason ?? choice.stop_reason;
+  return {
+    content,
+    reasoning,
+    finishReason: typeof rawFinishReason === "string" ? rawFinishReason.toLocaleLowerCase() : null,
+  };
 }
 
 export async function streamChatCompletion(options: {
@@ -79,8 +115,9 @@ export async function streamChatCompletion(options: {
   messages: ModelMessage[];
   signal: AbortSignal;
   onDelta: (text: string) => void;
+  onReasoningDelta?: (text: string) => void;
 }) {
-  const { config, apiKey, messages, signal, onDelta } = options;
+  const { config, apiKey, messages, signal, onDelta, onReasoningDelta } = options;
   if (!config.model.trim()) throw new Error("请填写模型 ID。");
 
   const response = await fetch(resolveApiEndpoint(config.baseUrl, config.chatCompletionsPath), {
@@ -104,15 +141,37 @@ export async function streamChatCompletion(options: {
   const contentType = response.headers.get("content-type") ?? "";
   if (!contentType.includes("text/event-stream") || !response.body) {
     const payload = await response.json() as unknown;
-    const content = extractDelta(payload);
-    if (!content) throw new Error("模型返回了无法识别的响应格式。");
-    onDelta(content);
-    return;
+    const result = extractResponseParts(payload);
+    if (result.reasoning) onReasoningDelta?.(result.reasoning);
+    if (!result.content) throw new Error("模型返回了思考内容，但没有可显示的最终回复。");
+    onDelta(result.content);
+    return { finishReason: result.finishReason, receivedDone: Boolean(result.finishReason) };
   }
 
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let finishReason: string | null = null;
+  let receivedDone = false;
+
+  function consumeLine(line: string) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("data:")) return;
+    const data = trimmed.slice(5).trim();
+    if (!data) return;
+    if (data === "[DONE]") {
+      receivedDone = true;
+      return;
+    }
+    try {
+      const result = extractResponseParts(JSON.parse(data));
+      if (result.reasoning) onReasoningDelta?.(result.reasoning);
+      if (result.content) onDelta(result.content);
+      if (result.finishReason) finishReason = result.finishReason;
+    } catch {
+      // Some compatible endpoints emit keepalive or non-JSON data lines.
+    }
+  }
 
   while (true) {
     const { value, done } = await reader.read();
@@ -121,19 +180,11 @@ export async function streamChatCompletion(options: {
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
 
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const data = trimmed.slice(5).trim();
-      if (!data || data === "[DONE]") continue;
-      try {
-        const delta = extractDelta(JSON.parse(data));
-        if (delta) onDelta(delta);
-      } catch {
-        // Some compatible endpoints emit keepalive or non-JSON data lines.
-      }
-    }
+    lines.forEach(consumeLine);
   }
+  buffer += decoder.decode();
+  if (buffer.trim()) buffer.split(/\r?\n/).forEach(consumeLine);
+  return { finishReason, receivedDone };
 }
 
 export async function generateChatCompletion(options: {
@@ -162,7 +213,7 @@ export async function generateChatCompletion(options: {
     const detail = await response.text();
     throw new Error(`模型请求失败（${response.status}）：${detail.slice(0, 240) || response.statusText}`);
   }
-  const content = extractDelta(await response.json() as unknown);
+  const content = extractResponseParts(await response.json() as unknown).content;
   if (!content.trim()) throw new Error("模型没有返回结构化事件提案。");
   return content.trim();
 }

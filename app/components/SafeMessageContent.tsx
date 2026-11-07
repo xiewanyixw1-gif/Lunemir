@@ -1,7 +1,7 @@
 "use client";
 
-import { Fragment, useMemo } from "react";
-import type { ReactNode } from "react";
+import { createElement, Fragment, useEffect, useMemo, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { normalizeOutputRenderer, transformOutputContent } from "../../lib/lunemir/output-renderer";
 import type { OutputRendererConfig } from "../../lib/lunemir/types";
 
@@ -17,6 +17,114 @@ type TheaterSection = {
   title?: string;
   content: string;
 };
+
+const SAFE_HTML_TAGS = new Set([
+  "a", "b", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2", "h3", "h4", "hr", "i", "li", "mark", "ol", "p", "pre", "rp", "rt", "ruby", "s", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul",
+]);
+const BLOCKED_HTML_TAGS = new Set(["script", "style", "iframe", "object", "embed", "svg", "math", "form", "input", "button", "textarea", "select", "video", "audio", "source", "link", "meta"]);
+const SAFE_STYLE_PROPERTIES = new Map<string, keyof CSSProperties>([
+  ["color", "color"],
+  ["background", "background"],
+  ["background-color", "backgroundColor"],
+  ["font-size", "fontSize"],
+  ["font-weight", "fontWeight"],
+  ["font-style", "fontStyle"],
+  ["text-align", "textAlign"],
+  ["text-decoration", "textDecoration"],
+  ["letter-spacing", "letterSpacing"],
+  ["line-height", "lineHeight"],
+  ["white-space", "whiteSpace"],
+  ["border", "border"],
+  ["border-color", "borderColor"],
+  ["border-style", "borderStyle"],
+  ["border-width", "borderWidth"],
+  ["border-radius", "borderRadius"],
+  ["padding", "padding"],
+]);
+
+function safeStyleValue(value: string) {
+  const trimmed = value.trim().slice(0, 120);
+  if (!trimmed || /url\s*\(|expression\s*\(|javascript:|@import|\\/i.test(trimmed)) return "";
+  const lengths = [...trimmed.matchAll(/(-?\d+(?:\.\d+)?)\s*(px|rem|em|%)/gi)];
+  if (lengths.some((match) => {
+    const amount = Number(match[1]);
+    const unit = match[2].toLocaleLowerCase();
+    return amount < 0 || (unit === "px" && amount > 64) || ((unit === "rem" || unit === "em") && amount > 4) || (unit === "%" && amount > 100);
+  })) return "";
+  return trimmed;
+}
+
+function readSafeStyle(element: Element) {
+  const raw = element.getAttribute("style");
+  if (!raw) return undefined;
+  const style: Record<string, string> = {};
+  raw.slice(0, 1_000).split(";").forEach((declaration) => {
+    const separator = declaration.indexOf(":");
+    if (separator < 1) return;
+    const cssName = declaration.slice(0, separator).trim().toLocaleLowerCase();
+    const reactName = SAFE_STYLE_PROPERTIES.get(cssName);
+    const value = safeStyleValue(declaration.slice(separator + 1));
+    if (reactName && value) style[reactName] = value;
+  });
+  return Object.keys(style).length > 0 ? style as CSSProperties : undefined;
+}
+
+function safeHref(value: string | null) {
+  if (!value) return "";
+  const trimmed = value.trim();
+  if (trimmed.startsWith("#") || /^https?:\/\//i.test(trimmed) || /^mailto:/i.test(trimmed)) return trimmed;
+  return "";
+}
+
+function htmlNodeToReact(node: ChildNode, path: string): ReactNode {
+  if (node.nodeType === 3) return node.textContent;
+  if (node.nodeType !== 1) return null;
+  const element = node as Element;
+  const tag = element.tagName.toLocaleLowerCase();
+  if (BLOCKED_HTML_TAGS.has(tag)) return null;
+  const children = [...element.childNodes].map((child, index) => htmlNodeToReact(child, `${path}-${index}`));
+  if (!SAFE_HTML_TAGS.has(tag)) return <Fragment key={path}>{children}</Fragment>;
+  const props: Record<string, unknown> = { key: path };
+  const style = readSafeStyle(element);
+  if (style) props.style = style;
+  const title = element.getAttribute("title");
+  if (title) props.title = title.slice(0, 200);
+  if (tag === "a") {
+    const href = safeHref(element.getAttribute("href"));
+    if (href) {
+      props.href = href;
+      props.target = "_blank";
+      props.rel = "noreferrer noopener";
+    }
+  }
+  if (tag === "details" && element.hasAttribute("open")) props.open = true;
+  if (tag === "td" || tag === "th") {
+    const colSpan = Number(element.getAttribute("colspan"));
+    const rowSpan = Number(element.getAttribute("rowspan"));
+    if (Number.isInteger(colSpan) && colSpan > 1 && colSpan <= 12) props.colSpan = colSpan;
+    if (Number.isInteger(rowSpan) && rowSpan > 1 && rowSpan <= 12) props.rowSpan = rowSpan;
+  }
+  return createElement(tag, props, ...children);
+}
+
+function SafeHtmlContent({ content }: { content: string }) {
+  const [parsed, setParsed] = useState<{ source: string; nodes: ReactNode[] } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      const document = new DOMParser().parseFromString(content, "text/html");
+      setParsed({ source: content, nodes: [...document.body.childNodes].map((node, index) => htmlNodeToReact(node, `html-${index}`)) });
+    });
+    return () => { cancelled = true; };
+  }, [content]);
+  const nodes = parsed?.source === content ? parsed.nodes : null;
+  return <div className="safe-html-content">{nodes ?? content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}</div>;
+}
+
+function RichBlocks({ content }: { content: string }) {
+  return /<\/?[a-z][\s\S]*?>/i.test(content) ? <SafeHtmlContent content={content} /> : <MarkdownBlocks content={content} />;
+}
 
 function inlineMarkdown(value: string) {
   const tokenPattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
@@ -184,10 +292,10 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
       {sections.map((section, index) => section.type === "theater" ? (
         <details className={`theater-card theater-card--${resolvedConfig.theaterTheme}`} open key={`theater-${index}-${section.title}`}>
           <summary><span>✦</span>{section.title}</summary>
-          <div className="theater-card-body"><MarkdownBlocks content={section.content} /></div>
+          <div className="theater-card-body"><RichBlocks content={section.content} /></div>
         </details>
       ) : (
-        <div className="markdown-content" key={`text-${index}`}><MarkdownBlocks content={section.content} /></div>
+        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} /></div>
       ))}
       {showWarnings && result.warnings.length > 0 ? <div className="renderer-warnings" role="status">{result.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div> : null}
     </div>
