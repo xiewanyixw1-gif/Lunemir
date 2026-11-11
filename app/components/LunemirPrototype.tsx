@@ -264,6 +264,10 @@ export function LunemirPrototype() {
     () => runtime.activePreset ? normalizeOutputRenderer(runtime.activePreset.outputRenderer) : null,
     [runtime.activePreset],
   );
+  const nativeWidgetRenderer = useMemo(
+    () => normalizeOutputRenderer({ enabled: true, markdown: true, theater: false, widgets: true, regexRules: [] }),
+    [],
+  );
   const filteredCharacters = useMemo(() => {
     const query = characterQuery.trim().toLocaleLowerCase();
     if (!query) return runtime.characters;
@@ -616,6 +620,12 @@ export function LunemirPrototype() {
                 const showName = isUser ? runtime.appearance.showUserName : runtime.appearance.showCharacterName;
                 const avatar = isUser ? runtime.activePersona?.avatarDataUrl : runtime.activeCharacter?.avatarDataUrl;
                 const displayContent = replaceRoleMacros(message.content, activeName, runtime.activePersona?.name ?? "用户");
+                const containsNativeWidget = /(?:^|\n)\s*(?::::|```)(?:status|widget)\b|<lunemir-(?:status|widget)\b/i.test(displayContent);
+                const messageOutputRenderer = activeOutputRenderer?.enabled
+                  ? activeOutputRenderer
+                  : !activeOutputRenderer && containsNativeWidget
+                    ? nativeWidgetRenderer
+                    : null;
                 const previousMessage = runtime.messages[index - 1];
                 const showDay = !previousMessage || messageDayLabel(previousMessage.createdAt) !== messageDayLabel(message.createdAt);
                 return (
@@ -635,9 +645,10 @@ export function LunemirPrototype() {
                             {runtime.appearance.showTimestamp ? <time dateTime={message.createdAt}>{new Date(message.createdAt).toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit" })}</time> : null}
                             {message.editedAt && <em>已编辑</em>}
                             {message.status === "stopped" && <em>已停止</em>}
+                            {message.status === "truncated" && <em>达到输出上限</em>}
                             {message.status === "error" && <em>失败</em>}
                             {message.continuationCount ? <em>已续写 {message.continuationCount} 次</em> : null}
-                            {message.finishReason && ["length", "max_tokens", "max_output_tokens"].includes(message.finishReason) ? <em>仍达到输出上限</em> : null}
+                            {message.completionTokens ? <em className="message-token-usage">{message.tokenCountEstimated ? "≈" : ""}{message.completionTokens.toLocaleString()} tokens</em> : null}
                           </header>
                           {!isUser && message.reasoning?.trim() ? <details className="message-reasoning"><summary><span>✦</span>{message.status === "streaming" ? "正在思考" : "查看思考过程"}</summary><pre>{replaceRoleMacros(message.reasoning, activeName, runtime.activePersona?.name ?? "用户")}</pre></details> : null}
                           {editingMessageId === message.id ? (
@@ -645,18 +656,24 @@ export function LunemirPrototype() {
                               <textarea value={editingMessageText} onChange={(event) => setEditingMessageText(event.target.value)} rows={4} autoFocus />
                               <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
                             </div>
-                          ) : message.role === "assistant" && activeOutputRenderer?.enabled ? (
-                            <SafeMessageContent source={displayContent} config={activeOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
+                          ) : message.role === "assistant" && messageOutputRenderer ? (
+                            <SafeMessageContent source={displayContent} config={messageOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
                           ) : runtime.appearance.messageStyle === "novel-flow" && !isUser ? (
                             <div className="novel-message-content">
                               {displayContent.trim().split(/\n\s*\n/).map((paragraph, paragraphIndex) => <p key={`${message.id}-paragraph-${paragraphIndex}`}>{paragraph.trim()}</p>)}
                             </div>
                           ) : <p>{displayContent}</p>}
+                          {message.status === "truncated" && editingMessageId !== message.id ? (
+                            <div className="generation-result-notice" role="status">
+                              <span>本次回复达到模型输出上限，内容可能尚未结束。</span>
+                              {message.role === "assistant" && index === runtime.messages.length - 1 ? <button type="button" onClick={() => void runtime.continueLastReply()} disabled={runtime.streaming}>继续生成</button> : null}
+                            </div>
+                          ) : null}
                           {!runtime.streaming && editingMessageId !== message.id && (
                             <details className="message-tools">
                               <summary aria-label="打开消息操作">•••</summary>
                               <div className="message-actions">
-                                {message.role === "assistant" && activeOutputRenderer?.enabled ? <button onClick={() => setRawMessageIds((current) => {
+                                {message.role === "assistant" && messageOutputRenderer ? <button onClick={() => setRawMessageIds((current) => {
                                   const next = new Set(current);
                                   if (next.has(message.id)) next.delete(message.id);
                                   else next.add(message.id);
@@ -896,9 +913,10 @@ export function LunemirPrototype() {
               </section>
               <section className="settings-group">
                 <header><span>02</span><div><strong>生成参数</strong><small>预设可以临时覆盖这些值，原始配置仍会保留。</small></div></header>
-                <div className="settings-field-grid three">
+                <div className="settings-field-grid">
                   <label>温度<input type="number" min="0" max="2" step="0.1" value={runtime.modelConfig.temperature} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, temperature: Number(event.target.value) })} /><small>数值越高，回复越发散。</small></label>
-                  <label>最大输出 Tokens<input type="number" min="1" step="1" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /><small>按当前模型允许的上限填写。</small></label>
+                  <label>最大输出 Tokens<input type="number" min="1" step="1" value={runtime.modelConfig.maxTokens} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokens: Number(event.target.value) })} /><small>默认 4096；当前实际值 {runtime.effectiveModelConfig.maxTokens}，预设可临时覆盖。</small></label>
+                  <label>输出长度参数<select value={runtime.modelConfig.maxTokenParam} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, maxTokenParam: event.target.value as "max_tokens" | "max_completion_tokens" })}><option value="max_tokens">max_tokens（通用兼容）</option><option value="max_completion_tokens">max_completion_tokens（部分新模型）</option></select><small>接口报参数不支持时切换；它不会改变填写的 Token 数。</small></label>
                   <label>上下文窗口<input type="number" min="1024" step="1" value={runtime.modelConfig.contextLimit} onChange={(event) => runtime.setModelConfig({ ...runtime.modelConfig, contextLimit: Number(event.target.value) })} /><small>例如 65535 或 128000。</small></label>
                 </div>
               </section>

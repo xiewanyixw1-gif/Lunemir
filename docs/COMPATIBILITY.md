@@ -33,9 +33,11 @@ v0.2 支持：
 - 读取 `finish_reason` / `stop_reason`，遇到 `length`、`max_tokens` 或 `max_output_tokens` 时最多自动续写两次；
 - 流结束时会消费没有尾部换行的最后一个 SSE 数据块，避免丢失末段；
 - 支持 Bearer API Key、Temperature、Max Tokens 与上下文窗口配置；
-- 支持浏览器端中止生成；
 - 可建立多个语言模型站点预设并快速切换，旧版单一模型配置会自动迁移为首个预设；
 - 生图接口拥有独立预设，默认调用 `POST {baseUrl}/images/generations`，兼容图片 URL 与 Base64 结果，并允许自定义模型列表和生成端点。
+- 可按接口选择 `max_tokens` 或 `max_completion_tokens`，预设采样参数只临时覆盖基础模型配置；
+- 读取 `finish_reason` 和接口返回的 Token usage；接口不返回 usage 时使用本地估算，并在达到输出上限时提供继续生成；
+- 支持浏览器端中止生成。
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天或生图、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可手动填写模型 ID 后发起生成。
 
@@ -56,9 +58,10 @@ v0.2 支持：
 - 提示词模块可单独启停、排序，并配置系统提示或历史后置位置与优先级；
 - Lunemir 导出使用 `lunemir_position` 保存模块插入位置，其他应用可以安全忽略该扩展字段；
 - 识别常见 `regex_scripts` / `regexScripts` 数组中的 AI 输出替换规则，并保留规则开关；
-- Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、小剧场主题和 Regex 配置；
+- Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、小剧场主题、原生组件和 Regex 配置；
+- 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 
-复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场和受约束 Regex，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件和受约束 Regex，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 
 ## 本地数据
 

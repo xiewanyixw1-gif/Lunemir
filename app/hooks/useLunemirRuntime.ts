@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readCharacterGreetings } from "../../lib/lunemir/character-import";
 import { parseContentFile } from "../../lib/lunemir/content-import";
-import { compileContext } from "../../lib/lunemir/context";
+import { compileContext, estimateTokens } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_IMAGE_MODEL_CONFIG, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
 import { generateChatCompletion, generateImage as requestGeneratedImage, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
 import { replaceRoleMacros } from "../../lib/lunemir/macros";
@@ -205,6 +205,7 @@ function normalizeAppearance(value?: Partial<AppearanceSettings>): AppearanceSet
 }
 
 function normalizeModelConfig(value?: Partial<ModelConfig>): ModelConfig {
+  const migrateLegacyLimit = value?.maxTokens === 1200 && !value?.maxTokenParam;
   return {
     ...DEFAULT_MODEL_CONFIG,
     ...value,
@@ -212,6 +213,8 @@ function normalizeModelConfig(value?: Partial<ModelConfig>): ModelConfig {
     modelsPath: typeof value?.modelsPath === "string" && value.modelsPath.trim() ? value.modelsPath : DEFAULT_MODEL_CONFIG.modelsPath,
     chatCompletionsPath: typeof value?.chatCompletionsPath === "string" && value.chatCompletionsPath.trim() ? value.chatCompletionsPath : DEFAULT_MODEL_CONFIG.chatCompletionsPath,
     model: typeof value?.model === "string" ? value.model : "",
+    maxTokens: migrateLegacyLimit ? DEFAULT_MODEL_CONFIG.maxTokens : value?.maxTokens ?? DEFAULT_MODEL_CONFIG.maxTokens,
+    maxTokenParam: value?.maxTokenParam === "max_completion_tokens" ? "max_completion_tokens" : DEFAULT_MODEL_CONFIG.maxTokenParam,
   };
 }
 
@@ -302,14 +305,18 @@ export function useLunemirRuntime() {
     () => presets.find((preset) => preset.id === activePresetId) ?? null,
     [activePresetId, presets],
   );
+  const effectiveModelConfig = useMemo<ModelConfig>(
+    () => activePreset ? { ...modelConfig, ...activePreset.modelPatch } : modelConfig,
+    [activePreset, modelConfig],
+  );
   const activeLorebooks = useMemo(() => {
     const assigned = new Set(lorebookAssignments[activeCharacter?.id ?? ""] ?? []);
     return lorebooks.filter((lorebook) => assigned.has(lorebook.id));
   }, [activeCharacter?.id, lorebookAssignments, lorebooks]);
 
   useEffect(() => {
-    contextLimitRef.current = modelConfig.contextLimit;
-  }, [modelConfig.contextLimit]);
+    contextLimitRef.current = effectiveModelConfig.contextLimit;
+  }, [effectiveModelConfig.contextLimit]);
 
   useEffect(() => {
     contextResourcesRef.current.persona = activePersona;
@@ -953,10 +960,10 @@ export function useLunemirRuntime() {
     const controller = new AbortController();
     try {
       const content = await generateChatCompletion({
-        config: modelConfig,
+        config: effectiveModelConfig,
         apiKey,
         signal: controller.signal,
-        maxTokens: Math.min(modelConfig.maxTokens, 1000),
+        maxTokens: Math.min(effectiveModelConfig.maxTokens, 1000),
         temperature: 0.2,
         messages: [
           { role: "system", content: "你是剧情档案整理器。只总结已经明确发生的事实，不补写、不推测。保留：重要事件、当前场景与时间、人物关系变化、承诺、秘密、未完成事项和伏笔。使用简洁中文分点输出。" },
@@ -1092,11 +1099,11 @@ export function useLunemirRuntime() {
       : "只有当角色在当前剧情状态下确实有理由额外联系用户时才将 shouldSend 设为 true；不要为了制造通知而强行发送。";
     try {
       const raw = await generateChatCompletion({
-        config: modelConfig,
+        config: effectiveModelConfig,
         apiKey,
         signal: controller.signal,
         maxTokens: 220,
-        temperature: Math.min(modelConfig.temperature, 0.72),
+        temperature: Math.min(effectiveModelConfig.temperature, 0.72),
         messages: [
           {
             role: "system",
@@ -1299,7 +1306,7 @@ export function useLunemirRuntime() {
     setMessages(visibleMessages);
     await persistMessages(visibleMessages);
 
-    const compiled = compileContext(character, requestMessages, modelConfig.contextLimit, contextResourcesRef.current);
+    const compiled = compileContext(character, requestMessages, effectiveModelConfig.contextLimit, contextResourcesRef.current);
     setContextReport(compiled.report);
     const controller = new AbortController();
     abortRef.current = controller;
@@ -1308,6 +1315,10 @@ export function useLunemirRuntime() {
     let reasoningText = "";
     let automaticContinuations = 0;
     let finalFinishReason: string | null = null;
+    let promptTokens = 0;
+    let completionTokens = 0;
+    let totalTokens = 0;
+    let usageReported = false;
     let completedForPhoneEvent: StoredMessage[] | null = null;
 
     try {
@@ -1317,7 +1328,7 @@ export function useLunemirRuntime() {
 
       while (true) {
         const result = await streamChatCompletion({
-          config: modelConfig,
+          config: effectiveModelConfig,
           apiKey,
           messages: modelMessages,
           signal: controller.signal,
@@ -1337,6 +1348,12 @@ export function useLunemirRuntime() {
           },
         });
         finalFinishReason = result.finishReason;
+        if (result.usage) {
+          usageReported = true;
+          promptTokens += result.usage.promptTokens ?? 0;
+          completionTokens += result.usage.completionTokens ?? 0;
+          totalTokens += result.usage.totalTokens ?? 0;
+        }
         if (!result.finishReason || !TRUNCATED_FINISH_REASONS.has(result.finishReason) || automaticContinuations >= AUTO_CONTINUATION_LIMIT) break;
         automaticContinuations += 1;
         const fullContent = splitEmbeddedReasoning(`${prefix}${assistantText}`).content;
@@ -1354,6 +1371,9 @@ export function useLunemirRuntime() {
       const completedContent = embeddedResult.content;
       const completedReasoning = [`${reasoningPrefix}${reasoningText}`.trim(), embeddedResult.reasoning].filter(Boolean).join("\n\n");
       const continuationCount = (target.mode === "append" ? (target.message.continuationCount ?? 0) + 1 : 0) + automaticContinuations;
+      const generatedTokens = usageReported && completionTokens > 0 ? completionTokens : estimateTokens(assistantText);
+      const truncated = TRUNCATED_FINISH_REASONS.has(finalFinishReason ?? "")
+        || (finalFinishReason === "stream_ended" && generatedTokens >= effectiveModelConfig.maxTokens * 0.92);
       const completed = visibleMessages.map((message) => message.id === assistantMessage.id
         ? {
             ...message,
@@ -1361,7 +1381,11 @@ export function useLunemirRuntime() {
             reasoning: completedReasoning || undefined,
             finishReason: finalFinishReason ?? undefined,
             continuationCount: continuationCount || undefined,
-            status: "complete" as const,
+            status: truncated ? "truncated" as const : "complete" as const,
+            promptTokens: usageReported && promptTokens > 0 ? promptTokens : undefined,
+            completionTokens: generatedTokens,
+            totalTokens: usageReported && totalTokens > 0 ? totalTokens : undefined,
+            tokenCountEstimated: !(usageReported && completionTokens > 0),
             ...(target.mode === "replace"
               ? { alternatives: [...previousAlternatives, completedContent], activeAlternative: previousAlternatives.length }
               : target.mode === "append" && message.alternatives?.length
@@ -1426,7 +1450,18 @@ export function useLunemirRuntime() {
       if (message.id !== messageId) return message;
       const nextContent = content.trim();
       const alternatives = message.alternatives?.map((alternative, index) => index === (message.activeAlternative ?? 0) ? nextContent : alternative);
-      return { ...message, content: nextContent, alternatives, editedAt: new Date().toISOString(), status: "complete" as const };
+      return {
+        ...message,
+        content: nextContent,
+        alternatives,
+        editedAt: new Date().toISOString(),
+        status: "complete" as const,
+        finishReason: undefined,
+        promptTokens: undefined,
+        completionTokens: undefined,
+        totalTokens: undefined,
+        tokenCountEstimated: undefined,
+      };
     });
     setMessages(nextMessages);
     await persistMessages(nextMessages);
@@ -1534,12 +1569,10 @@ export function useLunemirRuntime() {
         contextResourcesRef.current.preset = importPreview.record;
         const nextModel = { ...modelConfig, ...importPreview.record.modelPatch };
         contextLimitRef.current = nextModel.contextLimit;
-        setModelConfig(nextModel);
         const settings = await getSettings();
         await saveSettings({
           ...settings,
           activePresetId: importPreview.record.id,
-          model: nextModel,
           updatedAt: new Date().toISOString(),
         });
         if (activeCharacter) refreshContext(activeCharacter, messages);
@@ -1870,10 +1903,9 @@ export function useLunemirRuntime() {
     setActivePresetId(preset?.id ?? "");
     contextResourcesRef.current.preset = preset;
     const nextModel = preset ? { ...modelConfig, ...preset.modelPatch } : modelConfig;
-    setModelConfig(nextModel);
     contextLimitRef.current = nextModel.contextLimit;
     const settings = await getSettings();
-    await saveSettings({ ...settings, activePresetId: preset?.id, model: nextModel, updatedAt: new Date().toISOString() });
+    await saveSettings({ ...settings, activePresetId: preset?.id, updatedAt: new Date().toISOString() });
     if (activeCharacter) refreshContext(activeCharacter, messages);
   }
 
@@ -2356,6 +2388,7 @@ export function useLunemirRuntime() {
     saveCustomBackground,
     savePhoneWallpaper,
     modelConfig,
+    effectiveModelConfig,
     setModelConfig: updateModelConfig,
     modelProfiles,
     activeModelProfileId,

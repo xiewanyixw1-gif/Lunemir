@@ -33,7 +33,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   const [maxTokens, setMaxTokens] = useState(preset?.modelPatch.maxTokens?.toString() ?? "");
   const [contextLimit, setContextLimit] = useState(preset?.modelPatch.contextLimit?.toString() ?? "");
   const [outputRenderer, setOutputRenderer] = useState(() => normalizeOutputRenderer(preset?.outputRenderer));
-  const [rendererPreview, setRendererPreview] = useState(":::theater 雨夜番外\n**Seren** 将信封推到灯下。\n\n> 有些秘密，只适合在故事之外说。\n:::");
+  const [rendererPreview, setRendererPreview] = useState(":::status 当前状态\n时间：23:40\n地点：月港旧城区\n关系：信任 68\n:::\n\n:::theater 雨夜番外\n**Seren** 将信封推到灯下。\n\n> 有些秘密，只适合在故事之外说。\n:::");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const activeIndex = Math.max(0, modules.findIndex((module) => module.id === activeModuleId));
@@ -197,6 +197,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.enabled} onChange={(event) => updateRenderer({ enabled: event.target.checked })} /><span><strong>启用输出美化</strong><small>关闭后聊天区始终显示模型原文。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.markdown} onChange={(event) => updateRenderer({ markdown: event.target.checked })} /><span><strong>Markdown 与安全 HTML 转换</strong><small>HTML 只转换为安全排版，不运行脚本和外链资源。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.theater} onChange={(event) => updateRenderer({ theater: event.target.checked })} /><span><strong>识别小剧场卡片</strong><small>支持 :::theater 或 ```theater 围栏。</small></span></label>
+                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.widgets} onChange={(event) => updateRenderer({ widgets: event.target.checked })} /><span><strong>识别状态栏与原生组件</strong><small>支持 :::status、:::widget 和 Lunemir 安全组件标签。</small></span></label>
                 <label><span>小剧场样式</span><select value={outputRenderer.theaterTheme} onChange={(event) => updateRenderer({ theaterTheme: event.target.value as OutputRendererConfig["theaterTheme"] })}><option value="glass">月光毛玻璃</option><option value="minimal">极简旁白</option><option value="paper">信笺纸张</option></select></label>
               </div>
 

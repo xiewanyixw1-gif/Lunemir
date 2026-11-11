@@ -13,7 +13,7 @@ type Props = {
 };
 
 type TheaterSection = {
-  type: "text" | "theater";
+  type: "text" | "theater" | "status" | "widget";
   title?: string;
   content: string;
 };
@@ -125,6 +125,8 @@ function SafeHtmlContent({ content }: { content: string }) {
 function RichBlocks({ content }: { content: string }) {
   return /<\/?[a-z][\s\S]*?>/i.test(content) ? <SafeHtmlContent content={content} /> : <MarkdownBlocks content={content} />;
 }
+
+type WidgetRow = { label: string; value: string };
 
 function inlineMarkdown(value: string) {
   const tokenPattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
@@ -238,8 +240,44 @@ function MarkdownBlocks({ content }: { content: string }) {
   return <>{nodes}</>;
 }
 
-function splitTheaterSections(content: string, enabled: boolean) {
-  if (!enabled) return [{ type: "text" as const, content }];
+function parseWidgetRows(content: string): WidgetRow[] {
+  const trimmed = content.trim();
+  if (!trimmed) return [];
+  if (trimmed.startsWith("{") && trimmed.endsWith("}")) {
+    try {
+      const value = JSON.parse(trimmed) as Record<string, unknown>;
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        return Object.entries(value).slice(0, 16).map(([label, item]) => ({
+          label,
+          value: typeof item === "string" ? item : JSON.stringify(item),
+        }));
+      }
+    } catch {
+      // Fall through to the readable key/value format.
+    }
+  }
+  return trimmed.split(/\r?\n/).flatMap((line) => {
+    const match = line.match(/^\s*[-*]?\s*([^:：|]{1,32})\s*[:：|]\s*(.+?)\s*$/);
+    return match ? [{ label: match[1].trim(), value: match[2].trim() }] : [];
+  }).slice(0, 16);
+}
+
+function NativeWidget({ section }: { section: TheaterSection }) {
+  const rows = parseWidgetRows(section.content);
+  const title = section.title || (section.type === "status" ? "当前状态" : "剧情组件");
+  return (
+    <section className={`native-widget native-widget--${section.type}`} data-widget-title={title}>
+      <header><span>{section.type === "status" ? "STATUS" : "WIDGET"}</span><strong>{title}</strong></header>
+      {rows.length > 0 ? (
+        <dl>{rows.map((row, index) => <div key={`${row.label}-${index}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
+      ) : (
+        <div className="native-widget-body"><MarkdownBlocks content={section.content} /></div>
+      )}
+    </section>
+  );
+}
+
+function splitRichSections(content: string, theaterEnabled: boolean, widgetsEnabled: boolean) {
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const sections: TheaterSection[] = [];
   let text: string[] = [];
@@ -251,13 +289,18 @@ function splitTheaterSections(content: string, enabled: boolean) {
   }
 
   for (let index = 0; index < lines.length; index += 1) {
-    const start = lines[index].match(/^\s*(:::theater|```theater)\s*(.*?)\s*$/i);
+    const start = lines[index].match(/^\s*(:::|```)(theater|status|widget)\s*(.*?)\s*$/i);
     if (!start) {
       text.push(lines[index]);
       continue;
     }
+    const sectionType = start[2].toLocaleLowerCase() as "theater" | "status" | "widget";
+    if ((sectionType === "theater" && !theaterEnabled) || (sectionType !== "theater" && !widgetsEnabled)) {
+      text.push(lines[index]);
+      continue;
+    }
     flushText();
-    const isFence = start[1].toLocaleLowerCase() === "```theater";
+    const isFence = start[1] === "```";
     const body: string[] = [];
     index += 1;
     while (index < lines.length && !(isFence ? /^\s*```\s*$/.test(lines[index]) : /^\s*:::\s*$/.test(lines[index]))) {
@@ -265,8 +308,8 @@ function splitTheaterSections(content: string, enabled: boolean) {
       index += 1;
     }
     sections.push({
-      type: "theater",
-      title: start[2].trim() || "小剧场",
+      type: sectionType,
+      title: start[3].trim() || (sectionType === "theater" ? "小剧场" : sectionType === "status" ? "当前状态" : "剧情组件"),
       content: body.join("\n").trim(),
     });
   }
@@ -281,8 +324,8 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
     [resolvedConfig, source],
   );
   const sections = useMemo(
-    () => splitTheaterSections(result.content, resolvedConfig.theater),
-    [result.content, resolvedConfig.theater],
+    () => splitRichSections(result.content, resolvedConfig.theater, resolvedConfig.widgets),
+    [result.content, resolvedConfig.theater, resolvedConfig.widgets],
   );
 
   if (rawMode || !resolvedConfig.enabled) return <pre className="message-raw-content">{source}</pre>;
@@ -294,6 +337,8 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
           <summary><span>✦</span>{section.title}</summary>
           <div className="theater-card-body"><RichBlocks content={section.content} /></div>
         </details>
+      ) : section.type === "status" || section.type === "widget" ? (
+        <NativeWidget section={section} key={`${section.type}-${index}-${section.title}`} />
       ) : (
         <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} /></div>
       ))}

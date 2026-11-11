@@ -106,6 +106,8 @@ test("supports real character cards and compatible streaming", async () => {
   assert.match(importer, /chara_card_v2/);
   assert.match(client, /config\.chatCompletionsPath/);
   assert.match(client, /text\/event-stream/);
+  assert.match(client, /finish_reason/);
+  assert.match(client, /max_completion_tokens/);
   assert.match(context, /matchedLore/);
   assert.match(context, /estimatedTokens/);
 });
@@ -241,6 +243,8 @@ test("supports visual prompt preset composition and conflict checks", async () =
   assert.match(importer, /lunemir_position/);
   assert.match(presetLogic, /analyzePromptModules/);
   assert.match(presetLogic, /第一人称/);
+  assert.match(runtime, /effectiveModelConfig/);
+  assert.doesNotMatch(runtime, /setModelConfig\(\{ \.\.\.modelConfig, \.\.\.preset\.modelPatch/);
 });
 
 test("supports persistent personas bound to individual stories", async () => {
@@ -325,11 +329,16 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(component, /new DOMParser/);
   assert.match(component, /safeHref/);
   assert.match(component, /theater-card/);
+  assert.match(component, /native-widget/);
+  assert.match(renderer, /:::status/);
   assert.match(editor, /小剧场与输出美化/);
+  assert.match(editor, /识别状态栏与原生组件/);
   assert.match(editor, /Regex 美化规则/);
   assert.match(runtime, /lunemir_output_renderer/);
   assert.match(importer, /normalizeImportedOutputRenderer/);
   assert.match(prototype, /查看原文/);
+  assert.match(prototype, /达到输出上限/);
+  assert.match(runtime, /finishReason/);
 });
 
 test("keeps personas, story archives, and model settings useful on small screens", async () => {

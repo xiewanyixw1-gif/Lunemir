@@ -6,7 +6,8 @@ export const DEFAULT_MODEL_CONFIG: ModelConfig = {
   chatCompletionsPath: "/chat/completions",
   model: "",
   temperature: 0.8,
-  maxTokens: 1200,
+  maxTokens: 4096,
+  maxTokenParam: "max_tokens",
   contextLimit: 32000,
 };
 

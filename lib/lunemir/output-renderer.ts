@@ -10,6 +10,7 @@ export const DEFAULT_OUTPUT_RENDERER: OutputRendererConfig = {
   enabled: true,
   markdown: true,
   theater: true,
+  widgets: true,
   theaterTheme: "glass",
   regexRules: [],
 };
@@ -51,6 +52,7 @@ export function normalizeOutputRenderer(config?: Partial<OutputRendererConfig> |
     enabled: config?.enabled ?? DEFAULT_OUTPUT_RENDERER.enabled,
     markdown: config?.markdown ?? DEFAULT_OUTPUT_RENDERER.markdown,
     theater: config?.theater ?? DEFAULT_OUTPUT_RENDERER.theater,
+    widgets: config?.widgets ?? DEFAULT_OUTPUT_RENDERER.widgets,
     theaterTheme: ["glass", "minimal", "paper"].includes(config?.theaterTheme ?? "")
       ? config?.theaterTheme as OutputRendererConfig["theaterTheme"]
       : DEFAULT_OUTPUT_RENDERER.theaterTheme,
@@ -91,6 +93,7 @@ export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
       enabled: native.enabled !== false,
       markdown: native.markdown !== false,
       theater: native.theater !== false,
+      widgets: native.widgets !== false,
       theaterTheme: asString(native.theaterTheme) as OutputRendererConfig["theaterTheme"],
       regexRules: nativeRules.map((rule, index) => ({
         id: asString(rule.id) || createId("regex"),
@@ -157,8 +160,12 @@ function normalizeSafeHtml(value: string) {
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
     .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*\/?\s*>/gi, "")
-    .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "<details open><summary>$1</summary>$2</details>");
-  return decodeSafeEntities(output).trim();
+    .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "<details open><summary>$1</summary>$2</details>")
+    .replace(/<lunemir-status\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-status\s*>/gi, "\n:::status $1\n$2\n:::\n")
+    .replace(/<lunemir-widget\b[^>]*?(?:type=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-widget\s*>/gi, "\n:::widget $1\n$2\n:::\n")
+    .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
+    .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
+  return decodeSafeEntities(output).replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
 export type OutputTransformResult = {

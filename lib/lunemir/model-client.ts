@@ -77,15 +77,39 @@ function readTextValue(value: unknown) {
   }).join("");
 }
 
+export type CompletionUsage = {
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+};
+
+function normalizeUsage(value: unknown): CompletionUsage | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const usage = value as Record<string, unknown>;
+  const numberValue = (...keys: string[]) => {
+    const match = keys.map((key) => usage[key]).find((item) => typeof item === "number" && Number.isFinite(item));
+    return typeof match === "number" ? match : undefined;
+  };
+  const normalized = {
+    promptTokens: numberValue("prompt_tokens", "promptTokens", "input_tokens", "inputTokens"),
+    completionTokens: numberValue("completion_tokens", "completionTokens", "output_tokens", "outputTokens"),
+    totalTokens: numberValue("total_tokens", "totalTokens"),
+  };
+  return Object.values(normalized).some((item) => item !== undefined) ? normalized : undefined;
+}
+
 function extractResponseParts(payload: unknown) {
-  if (!payload || typeof payload !== "object") return { content: "", reasoning: "", finishReason: null as string | null };
-  const choices = (payload as { choices?: unknown }).choices;
-  if (!Array.isArray(choices) || choices.length === 0) return { content: "", reasoning: "", finishReason: null as string | null };
+  if (!payload || typeof payload !== "object") return { content: "", reasoning: "", finishReason: null as string | null, usage: undefined as CompletionUsage | undefined };
+  const record = payload as { choices?: unknown; usage?: unknown };
+  const choices = record.choices;
+  const usage = normalizeUsage(record.usage);
+  if (!Array.isArray(choices) || choices.length === 0) return { content: "", reasoning: "", finishReason: null as string | null, usage };
   const choice = choices[0] as {
     delta?: Record<string, unknown>;
     message?: Record<string, unknown>;
     text?: unknown;
     finish_reason?: unknown;
+    finishReason?: unknown;
     stop_reason?: unknown;
   };
   const delta = choice.delta ?? {};
@@ -101,12 +125,19 @@ function extractResponseParts(payload: unknown) {
     message.thinking,
     message.reasoning_details,
   ].map(readTextValue).find(Boolean) ?? "";
-  const rawFinishReason = choice.finish_reason ?? choice.stop_reason;
+  const rawFinishReason = choice.finish_reason ?? choice.finishReason ?? choice.stop_reason;
   return {
     content,
     reasoning,
     finishReason: typeof rawFinishReason === "string" ? rawFinishReason.toLocaleLowerCase() : null,
+    usage,
   };
+}
+
+function tokenLimit(config: ModelConfig, value = config.maxTokens) {
+  return config.maxTokenParam === "max_completion_tokens"
+    ? { max_completion_tokens: value }
+    : { max_tokens: value };
 }
 
 export async function streamChatCompletion(options: {
@@ -128,7 +159,7 @@ export async function streamChatCompletion(options: {
       model: config.model.trim(),
       messages,
       temperature: config.temperature,
-      max_tokens: config.maxTokens,
+      ...tokenLimit(config),
       stream: true,
     }),
   });
@@ -145,7 +176,7 @@ export async function streamChatCompletion(options: {
     if (result.reasoning) onReasoningDelta?.(result.reasoning);
     if (!result.content) throw new Error("模型返回了思考内容，但没有可显示的最终回复。");
     onDelta(result.content);
-    return { finishReason: result.finishReason, receivedDone: Boolean(result.finishReason) };
+    return { finishReason: result.finishReason ?? "stop", receivedDone: Boolean(result.finishReason), usage: result.usage };
   }
 
   const reader = response.body.getReader();
@@ -153,6 +184,7 @@ export async function streamChatCompletion(options: {
   let buffer = "";
   let finishReason: string | null = null;
   let receivedDone = false;
+  let usage: CompletionUsage | undefined;
 
   function consumeLine(line: string) {
     const trimmed = line.trim();
@@ -168,6 +200,7 @@ export async function streamChatCompletion(options: {
       if (result.reasoning) onReasoningDelta?.(result.reasoning);
       if (result.content) onDelta(result.content);
       if (result.finishReason) finishReason = result.finishReason;
+      if (result.usage) usage = { ...usage, ...result.usage };
     } catch {
       // Some compatible endpoints emit keepalive or non-JSON data lines.
     }
@@ -180,11 +213,11 @@ export async function streamChatCompletion(options: {
     const lines = buffer.split(/\r?\n/);
     buffer = lines.pop() ?? "";
 
-    lines.forEach(consumeLine);
+    for (const line of lines) consumeLine(line);
   }
   buffer += decoder.decode();
   if (buffer.trim()) buffer.split(/\r?\n/).forEach(consumeLine);
-  return { finishReason, receivedDone };
+  return { finishReason: finishReason ?? (receivedDone ? "stop" : "stream_ended"), receivedDone, usage };
 }
 
 export async function generateChatCompletion(options: {
@@ -205,7 +238,7 @@ export async function generateChatCompletion(options: {
       model: config.model.trim(),
       messages,
       temperature: options.temperature ?? Math.min(config.temperature, 0.75),
-      max_tokens: options.maxTokens ?? Math.min(config.maxTokens, 240),
+      ...tokenLimit(config, options.maxTokens ?? Math.min(config.maxTokens, 240)),
       stream: false,
     }),
   });

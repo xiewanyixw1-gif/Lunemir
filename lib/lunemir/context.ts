@@ -156,6 +156,15 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
+  const outputProtocol = preset?.outputRenderer?.enabled && preset.outputRenderer.widgets
+    ? `Lunemir 原生组件协议：仅当当前预设本来要求输出状态栏或小组件时，使用下面的纯文本格式，不要输出 HTML、CSS 或 JavaScript：
+:::status 状态栏标题
+时间：当前剧情时间
+地点：当前地点
+情绪：角色当前情绪
+:::
+其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。`
+    : "";
   const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
   const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";
@@ -177,7 +186,7 @@ export function compileContext(
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
+  const systemContent = [presetPrompt, outputProtocol, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
     .filter(Boolean)
     .join("\n\n---\n\n");
   const coveredMessageCount = summaryText ? Math.min(messages.length, options.storySummary?.coveredMessageCount ?? 0) : 0;

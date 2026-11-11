@@ -139,6 +139,7 @@ export type OutputRendererConfig = {
   enabled: boolean;
   markdown: boolean;
   theater: boolean;
+  widgets: boolean;
   theaterTheme: "glass" | "minimal" | "paper";
   regexRules: OutputRegexRule[];
 };
@@ -171,7 +172,11 @@ export type StoredMessage = {
   finishReason?: string;
   continuationCount?: number;
   createdAt: string;
-  status?: "complete" | "streaming" | "stopped" | "error";
+  status?: "complete" | "streaming" | "stopped" | "truncated" | "error";
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  tokenCountEstimated?: boolean;
   editedAt?: string;
   alternatives?: string[];
   activeAlternative?: number;
@@ -266,6 +271,7 @@ export type ModelConfig = {
   model: string;
   temperature: number;
   maxTokens: number;
+  maxTokenParam: "max_tokens" | "max_completion_tokens";
   contextLimit: number;
 };
 
