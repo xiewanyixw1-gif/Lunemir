@@ -620,7 +620,7 @@ export function LunemirPrototype() {
                 const showName = isUser ? runtime.appearance.showUserName : runtime.appearance.showCharacterName;
                 const avatar = isUser ? runtime.activePersona?.avatarDataUrl : runtime.activeCharacter?.avatarDataUrl;
                 const displayContent = replaceRoleMacros(message.content, activeName, runtime.activePersona?.name ?? "用户");
-                const containsNativeWidget = /(?:^|\n)\s*(?::::|```)(?:status|widget)\b|<lunemir-(?:status|widget)\b/i.test(displayContent);
+                const containsNativeWidget = /(?:^|\n)\s*(?::::|```)(?:status|widget)\b|<lunemir-(?:status|widget)\b|\[(?:UI_PANEL|STATUS_PANEL|MEMORY_PANEL)\]/i.test(displayContent);
                 const messageOutputRenderer = activeOutputRenderer?.enabled
                   ? activeOutputRenderer
                   : !activeOutputRenderer && containsNativeWidget

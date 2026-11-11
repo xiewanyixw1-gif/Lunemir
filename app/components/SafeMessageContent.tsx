@@ -82,6 +82,7 @@ function htmlNodeToReact(node: ChildNode, path: string): ReactNode {
   const element = node as Element;
   const tag = element.tagName.toLocaleLowerCase();
   if (BLOCKED_HTML_TAGS.has(tag)) return null;
+  if (element.children.length === 0 && /^\s*正在渲染(?:回忆|内容|组件)?[.…·]*\s*$/i.test(element.textContent ?? "")) return null;
   const children = [...element.childNodes].map((child, index) => htmlNodeToReact(child, `${path}-${index}`));
   if (!SAFE_HTML_TAGS.has(tag)) return <Fragment key={path}>{children}</Fragment>;
   const props: Record<string, unknown> = { key: path };
@@ -123,7 +124,10 @@ function SafeHtmlContent({ content }: { content: string }) {
 }
 
 function RichBlocks({ content }: { content: string }) {
-  return /<\/?[a-z][\s\S]*?>/i.test(content) ? <SafeHtmlContent content={content} /> : <MarkdownBlocks content={content} />;
+  const trimmed = content.trim();
+  const rawHtmlDocument = !trimmed.includes("```")
+    && /^(?:<!doctype\s+html[^>]*>\s*)?<(?:article|aside|blockquote|details|div|h[1-4]|ol|p|pre|section|table|ul)\b/i.test(trimmed);
+  return rawHtmlDocument ? <SafeHtmlContent content={content} /> : <MarkdownBlocks content={content} />;
 }
 
 type WidgetRow = { label: string; value: string };
@@ -165,7 +169,9 @@ function MarkdownBlocks({ content }: { content: string }) {
     }
 
     if (line.trim().startsWith("```")) {
-      const language = line.trim().slice(3).trim();
+      const fenceInfo = line.trim().slice(3).trim();
+      const [language = "", ...titleParts] = fenceInfo.split(/\s+/);
+      const title = titleParts.join(" ").trim();
       const code: string[] = [];
       index += 1;
       while (index < lines.length && !lines[index].trim().startsWith("```")) {
@@ -173,7 +179,17 @@ function MarkdownBlocks({ content }: { content: string }) {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      nodes.push(<pre className="safe-code-block" key={`code-${index}`}><code data-language={language || undefined}>{code.join("\n")}</code></pre>);
+      const codeContent = code.join("\n");
+      if (/^html?$/i.test(language)) {
+        nodes.push(
+          <section className="safe-html-fence" key={`html-${index}`}>
+            {title ? <header><span>HTML</span><strong>{title}</strong></header> : null}
+            {/<\/?[a-z][\s\S]*?>/i.test(codeContent) ? <SafeHtmlContent content={codeContent} /> : <MarkdownBlocks content={codeContent} />}
+          </section>,
+        );
+      } else {
+        nodes.push(<pre className="safe-code-block" key={`code-${index}`}><code data-language={language || undefined}>{codeContent}</code></pre>);
+      }
       continue;
     }
 
@@ -234,7 +250,10 @@ function MarkdownBlocks({ content }: { content: string }) {
       paragraph.push(lines[index]);
       index += 1;
     }
-    nodes.push(<p key={`paragraph-${index}`}>{withLineBreaks(paragraph.join("\n"))}</p>);
+    const paragraphContent = paragraph.join("\n");
+    nodes.push(/<\/?[a-z][\s\S]*?>/i.test(paragraphContent)
+      ? <SafeHtmlContent content={paragraphContent} key={`html-paragraph-${index}`} />
+      : <p key={`paragraph-${index}`}>{withLineBreaks(paragraphContent)}</p>);
   }
 
   return <>{nodes}</>;
@@ -256,6 +275,21 @@ function parseWidgetRows(content: string): WidgetRow[] {
       // Fall through to the readable key/value format.
     }
   }
+  const knownLabels: Record<string, string> = {
+    name: "角色",
+    location: "地点",
+    time: "时间",
+    observation: "观察",
+    voice: "心声",
+    image: "画面",
+    post: "动态",
+    story: "剧情",
+  };
+  const labelPattern = Object.keys(knownLabels).join("|");
+  const inlineRows = [...trimmed.matchAll(new RegExp(`(?:^|\\s)(${labelPattern})\\s*[:：]\\s*([\\s\\S]*?)(?=\\s+(?:${labelPattern})\\s*[:：]|$)`, "gi"))]
+    .map((match) => ({ label: knownLabels[match[1].toLocaleLowerCase()] ?? match[1], value: match[2].trim() }))
+    .filter((row) => row.value);
+  if (inlineRows.length > 0) return inlineRows.slice(0, 16);
   return trimmed.split(/\r?\n/).flatMap((line) => {
     const match = line.match(/^\s*[-*]?\s*([^:：|]{1,32})\s*[:：|]\s*(.+?)\s*$/);
     return match ? [{ label: match[1].trim(), value: match[2].trim() }] : [];

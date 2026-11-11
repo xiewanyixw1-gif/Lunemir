@@ -155,8 +155,15 @@ function decodeSafeEntities(value: string) {
   });
 }
 
+function normalizeBracketWidgets(value: string) {
+  return value.replace(/\[(UI_PANEL|STATUS_PANEL|MEMORY_PANEL)\]([\s\S]*?)\[\/\1\]/gi, (_match, rawType: string, body: string) => {
+    const memoryPanel = rawType.toLocaleUpperCase() === "MEMORY_PANEL";
+    return `\n:::${memoryPanel ? "widget 回忆书签" : "status 剧情状态"}\n${body.trim()}\n:::\n`;
+  });
+}
+
 function normalizeSafeHtml(value: string) {
-  const output = value
+  const output = normalizeBracketWidgets(value)
     .replace(/<!--[\s\S]*?-->/g, "")
     .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
     .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*\/?\s*>/gi, "")

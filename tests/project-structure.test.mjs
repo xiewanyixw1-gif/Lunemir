@@ -330,7 +330,11 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(component, /safeHref/);
   assert.match(component, /theater-card/);
   assert.match(component, /native-widget/);
+  assert.match(component, /safe-html-fence/);
+  assert.match(component, /knownLabels/);
+  assert.match(component, /正在渲染/);
   assert.match(renderer, /:::status/);
+  assert.match(renderer, /UI_PANEL/);
   assert.match(editor, /小剧场与输出美化/);
   assert.match(editor, /识别状态栏与原生组件/);
   assert.match(editor, /Regex 美化规则/);
