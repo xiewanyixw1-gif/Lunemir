@@ -18,6 +18,13 @@ type TheaterSection = {
   content: string;
 };
 
+type WidgetRow = { label: string; value: string };
+
+type MessageStatusPayload = {
+  title: string;
+  rows: WidgetRow[];
+};
+
 const SAFE_HTML_TAGS = new Set([
   "a", "article", "b", "blockquote", "br", "character-status", "code", "content", "dd", "del", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "header", "hr", "i", "img", "li", "main", "mark", "meter", "ol", "p", "pre", "progress", "rp", "rt", "ruby", "s", "section", "small", "span", "status", "status-bar", "statusbar", "statusblock", "story-widget", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "widget", "widget-block", "widgetblock",
 ]);
@@ -155,7 +162,41 @@ function sanitizeClassNames(value: string) {
   return value.split(/\s+/).filter((item) => /^[a-z_][\w-]{0,63}$/i.test(item)).slice(0, 24).join(" ");
 }
 
-function appendSanitizedPresetNode(parent: Node, node: Node, ownerDocument: Document) {
+type PresetStatusHydration = { injected: boolean };
+
+function appendStatusText(ownerDocument: Document, parent: Element, tag: string, className: string, value: string) {
+  const element = ownerDocument.createElement(tag);
+  element.className = className;
+  element.textContent = value;
+  parent.appendChild(element);
+}
+
+function createMessageStatusPanel(ownerDocument: Document, status: MessageStatusPayload) {
+  const panel = ownerDocument.createElement("section");
+  panel.className = "lm-message-status";
+  panel.setAttribute("data-lunemir-status-compat", "message");
+  const header = ownerDocument.createElement("header");
+  appendStatusText(ownerDocument, header, "span", "lm-message-status-kicker", "STATUS");
+  appendStatusText(ownerDocument, header, "strong", "lm-message-status-title", status.title);
+  panel.appendChild(header);
+  const list = ownerDocument.createElement("dl");
+  status.rows.slice(0, 16).forEach((row) => {
+    const item = ownerDocument.createElement("div");
+    appendStatusText(ownerDocument, item, "dt", "", row.label);
+    appendStatusText(ownerDocument, item, "dd", "", row.value);
+    list.appendChild(item);
+  });
+  panel.appendChild(list);
+  return panel;
+}
+
+function appendSanitizedPresetNode(
+  parent: Node,
+  node: Node,
+  ownerDocument: Document,
+  messageStatus?: MessageStatusPayload | null,
+  hydration: PresetStatusHydration = { injected: false },
+) {
   if (node.nodeType === Node.TEXT_NODE) {
     parent.appendChild(ownerDocument.createTextNode((node.textContent ?? "").slice(0, 100_000)));
     return;
@@ -167,10 +208,16 @@ function appendSanitizedPresetNode(parent: Node, node: Node, ownerDocument: Docu
   // Tavern widgets can leave a loading card that their JavaScript would
   // replace. Scripts stay disabled, so remove the complete inert card,
   // including variants whose text is wrapped in nested spans.
-  if (isInertLoadingPlaceholder(source.textContent)) return;
+  if (isInertLoadingPlaceholder(source.textContent)) {
+    if (messageStatus && !hydration.injected) {
+      parent.appendChild(createMessageStatusPanel(ownerDocument, messageStatus));
+      hydration.injected = true;
+    }
+    return;
+  }
   const safeCustomElement = /^[a-z][a-z\d]*-[a-z\d-]+$/.test(tag);
   if (!SAFE_HTML_TAGS.has(tag) && !safeCustomElement) {
-    [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument));
+    [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument, messageStatus, hydration));
     return;
   }
 
@@ -216,11 +263,11 @@ function appendSanitizedPresetNode(parent: Node, node: Node, ownerDocument: Docu
     const dateTime = source.getAttribute("datetime");
     if (dateTime) target.setAttribute("datetime", dateTime.slice(0, 80));
   }
-  [...source.childNodes].forEach((child) => appendSanitizedPresetNode(target, child, ownerDocument));
+  [...source.childNodes].forEach((child) => appendSanitizedPresetNode(target, child, ownerDocument, messageStatus, hydration));
   parent.appendChild(target);
 }
 
-function IsolatedPresetHtml({ content }: { content: string }) {
+function IsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -239,28 +286,35 @@ function IsolatedPresetHtml({ content }: { content: string }) {
       .lm-preset-root table{width:100%;border-collapse:collapse}
       .lm-preset-root pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
       .lm-preset-root a{color:inherit}
+      .lm-message-status{display:grid;gap:10px;width:100%;margin:8px 0;border:1px solid rgba(171,144,255,.26);border-radius:16px;padding:13px;background:linear-gradient(145deg,rgba(39,31,70,.78),rgba(12,10,31,.74));box-shadow:0 14px 34px rgba(0,0,0,.2);color:#f1edf8;font-family:Inter,"Noto Sans SC",sans-serif;text-shadow:none}
+      .lm-message-status header{display:flex;align-items:center;gap:8px;padding:0 0 9px;border-bottom:1px solid rgba(255,255,255,.08)}
+      .lm-message-status-kicker{border-radius:6px;padding:3px 6px;background:rgba(171,144,255,.14);color:#bba5ff;font-size:9px;font-weight:700;letter-spacing:.14em}
+      .lm-message-status-title{font-size:14px;font-weight:650}
+      .lm-message-status dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:0}.lm-message-status dl div{display:grid;gap:3px;border-radius:10px;padding:8px;background:rgba(255,255,255,.03)}
+      .lm-message-status dt{color:#90899f;font-size:9px}.lm-message-status dd{margin:0;color:#eeeaf7;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
+      @media(max-width:600px){.lm-message-status{border-radius:14px;padding:11px}.lm-message-status dl{grid-template-columns:1fr 1fr}}
       ${sanitizePresetCss(importedCss)}
     `;
     const root = document.createElement("div");
     root.className = "lm-preset-root";
-    [...parsed.body.childNodes].forEach((node) => appendSanitizedPresetNode(root, node, document));
+    const messageStatus = extractMessageStatus(statusSource);
+    const hydration: PresetStatusHydration = { injected: false };
+    [...parsed.body.childNodes].forEach((node) => appendSanitizedPresetNode(root, node, document, messageStatus, hydration));
     shadow.append(style, root);
-  }, [content]);
+  }, [content, statusSource]);
   return <div className="preset-html-sandbox" ref={hostRef} data-render-mode="isolated-preset" />;
 }
 
-function RichBlocks({ content, isolatedHtml = true }: { content: string; isolatedHtml?: boolean }) {
+function RichBlocks({ content, isolatedHtml = true, statusSource = content }: { content: string; isolatedHtml?: boolean; statusSource?: string }) {
   const trimmed = content.trim();
   const hasHtml = /<\/?[a-z][\s\S]*?>/i.test(trimmed);
   const rawHtmlDocument = hasHtml
     && !trimmed.includes("```")
     && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|content|details|div|h[1-4]|main|ol|p|pre|section|status|statusbar|table|ul|widget)\b/i.test(trimmed)
       || /<style\b/i.test(trimmed));
-  if (!rawHtmlDocument) return <MarkdownBlocks content={content} isolatedHtml={isolatedHtml} />;
-  return isolatedHtml ? <IsolatedPresetHtml content={content} /> : <SafeHtmlContent content={content} />;
+  if (!rawHtmlDocument) return <MarkdownBlocks content={content} isolatedHtml={isolatedHtml} statusSource={statusSource} />;
+  return isolatedHtml ? <IsolatedPresetHtml content={content} statusSource={statusSource} /> : <SafeHtmlContent content={content} />;
 }
-
-type WidgetRow = { label: string; value: string };
 
 function inlineMarkdown(value: string) {
   const tokenPattern = /(`[^`\n]+`|\*\*[^*\n]+\*\*|__[^_\n]+__|\*[^*\n]+\*|_[^_\n]+_)/g;
@@ -286,7 +340,7 @@ function withLineBreaks(value: string) {
   ));
 }
 
-function MarkdownBlocks({ content, isolatedHtml = true }: { content: string; isolatedHtml?: boolean }) {
+function MarkdownBlocks({ content, isolatedHtml = true, statusSource = content }: { content: string; isolatedHtml?: boolean; statusSource?: string }) {
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -316,8 +370,8 @@ function MarkdownBlocks({ content, isolatedHtml = true }: { content: string; iso
           <section className="safe-html-fence" key={`html-${index}`}>
             {title ? <header><span>HTML</span><strong>{title}</strong></header> : null}
             {/<\/?[a-z][\s\S]*?>/i.test(codeContent)
-              ? useIsolatedRenderer ? <IsolatedPresetHtml content={codeContent} /> : <SafeHtmlContent content={codeContent} />
-              : <MarkdownBlocks content={codeContent} isolatedHtml={isolatedHtml} />}
+              ? useIsolatedRenderer ? <IsolatedPresetHtml content={codeContent} statusSource={statusSource} /> : <SafeHtmlContent content={codeContent} />
+              : <MarkdownBlocks content={codeContent} isolatedHtml={isolatedHtml} statusSource={statusSource} />}
           </section>,
         );
       } else {
@@ -410,13 +464,55 @@ function parseWidgetRows(content: string): WidgetRow[] {
   }
   const knownLabels: Record<string, string> = {
     name: "角色",
+    character: "角色",
+    role: "角色",
+    人物: "角色",
+    角色: "角色",
+    姓名: "角色",
     location: "地点",
+    place: "地点",
+    地点: "地点",
+    位置: "地点",
     time: "时间",
+    date: "时间",
+    时间: "时间",
+    日期: "时间",
+    weather: "天气",
+    天气: "天气",
+    mood: "情绪",
+    emotion: "情绪",
+    情绪: "情绪",
+    心情: "情绪",
+    status: "状态",
+    state: "状态",
+    状态: "状态",
+    action: "动作",
+    动作: "动作",
+    outfit: "衣着",
+    clothing: "衣着",
+    衣着: "衣着",
+    服装: "衣着",
+    relationship: "关系",
+    relation: "关系",
+    关系: "关系",
+    affection: "好感",
+    favor: "好感",
+    好感: "好感",
+    好感度: "好感",
+    scene: "场景",
+    场景: "场景",
     observation: "观察",
+    观察: "观察",
     voice: "心声",
+    心声: "心声",
     image: "画面",
+    画面: "画面",
     post: "动态",
+    动态: "动态",
     story: "剧情",
+    剧情: "剧情",
+    health: "健康",
+    健康: "健康",
   };
   const labelPattern = Object.keys(knownLabels).join("|");
   const inlineRows = [...trimmed.matchAll(new RegExp(`(?:^|\\s)(${labelPattern})\\s*[:：]\\s*([\\s\\S]*?)(?=\\s+(?:${labelPattern})\\s*[:：]|$)`, "gi"))]
@@ -425,8 +521,99 @@ function parseWidgetRows(content: string): WidgetRow[] {
   if (inlineRows.length > 0) return inlineRows.slice(0, 16);
   return trimmed.split(/\r?\n/).flatMap((line) => {
     const match = line.match(/^\s*[-*]?\s*([^:：|]{1,32})\s*[:：|]\s*(.+?)\s*$/);
-    return match ? [{ label: match[1].trim(), value: match[2].trim() }] : [];
+    if (!match) return [];
+    const rawLabel = match[1].trim();
+    return [{ label: knownLabels[rawLabel.toLocaleLowerCase()] ?? rawLabel, value: match[2].trim() }];
   }).slice(0, 16);
+}
+
+const STATUS_LABELS = new Set([
+  "角色", "地点", "时间", "天气", "情绪", "状态", "动作", "衣着",
+  "关系", "好感", "场景", "观察", "心声", "画面", "动态", "剧情", "健康",
+]);
+
+function statusRowsFromText(value: string, explicit = false) {
+  const rows = parseWidgetRows(value)
+    .map((row) => ({ label: row.label.trim().slice(0, 32), value: row.value.trim().slice(0, 2_000) }))
+    .filter((row) => row.value && STATUS_LABELS.has(row.label));
+  return rows.length >= (explicit ? 1 : 2) ? rows.slice(0, 16) : [];
+}
+
+function statusValue(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value).trim();
+  if (Array.isArray(value)) return value.map((item) => statusValue(item)).filter(Boolean).join("、");
+  return "";
+}
+
+function statusRowsFromJson(value: unknown, depth = 0): WidgetRow[] {
+  if (!value || typeof value !== "object" || depth > 3) return [];
+  const rows: WidgetRow[] = [];
+  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
+    const parsed = parseWidgetRows(`${key}: ${statusValue(item)}`)[0];
+    if (parsed && STATUS_LABELS.has(parsed.label) && parsed.value) {
+      rows.push({ label: parsed.label, value: parsed.value.slice(0, 2_000) });
+      return;
+    }
+    if (/^(?:status|state|characterStatus|character_status|statusData|status_data|data|details)$/i.test(key)) {
+      rows.push(...statusRowsFromJson(item, depth + 1));
+    }
+  });
+  return rows.slice(0, 16);
+}
+
+function statusTitle(element?: Element | null) {
+  return element?.getAttribute("data-status-title")?.trim().slice(0, 60)
+    || element?.getAttribute("data-title")?.trim().slice(0, 60)
+    || element?.getAttribute("title")?.trim().slice(0, 60)
+    || "当前状态";
+}
+
+function extractMessageStatus(source: string): MessageStatusPayload | null {
+  if (!source.trim()) return null;
+  const boundedSource = source.slice(0, 200_000);
+  const parsed = new DOMParser().parseFromString(boundedSource, "text/html");
+
+  for (const script of parsed.querySelectorAll('script[type="application/json"], script[type="application/ld+json"]')) {
+    try {
+      const rows = statusRowsFromJson(JSON.parse(script.textContent ?? ""));
+      if (rows.length > 0) return { title: statusTitle(script), rows };
+    } catch {
+      // Malformed JSON remains inert and is never executed.
+    }
+  }
+
+  const dataRows = [...parsed.querySelectorAll("[data-status-label], [data-field], [data-label]")].flatMap((element) => {
+    const label = element.getAttribute("data-status-label") || element.getAttribute("data-field") || element.getAttribute("data-label") || "";
+    const value = element.getAttribute("data-status-value") || element.getAttribute("data-value") || element.textContent || "";
+    return statusRowsFromText(`${label}: ${value}`, true);
+  });
+  if (dataRows.length > 0) return { title: "当前状态", rows: dataRows.slice(0, 16) };
+
+  const explicitSelector = [
+    "status", "status-bar", "statusbar", "statusblock", "status-block", "character-status",
+    "[data-status]", "[data-status-bar]", '[data-widget="status"]', '[data-type="status"]',
+  ].join(",");
+  for (const element of parsed.querySelectorAll(explicitSelector)) {
+    if (isInertLoadingPlaceholder(element.textContent)) continue;
+    const rows = statusRowsFromText(element.textContent ?? "", true);
+    if (rows.length > 0) return { title: statusTitle(element), rows };
+  }
+
+  const markerPatterns = [
+    /\[(?:STATUS|STATUS_PANEL|STATUSBAR|CHARACTER_STATUS)\]([\s\S]*?)\[\/(?:STATUS|STATUS_PANEL|STATUSBAR|CHARACTER_STATUS)\]/gi,
+    /(?:^|\n)\s*:::status[^\n]*\n([\s\S]*?)\n\s*:::(?=\n|$)/gi,
+  ];
+  for (const pattern of markerPatterns) {
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(boundedSource)) !== null) {
+      const rows = statusRowsFromText(match[1], true);
+      if (rows.length > 0) return { title: "当前状态", rows };
+    }
+  }
+
+  parsed.querySelectorAll("style, script").forEach((element) => element.remove());
+  const compactRows = statusRowsFromText(parsed.body.textContent ?? "");
+  return compactRows.length > 0 ? { title: "当前状态", rows: compactRows } : null;
 }
 
 function NativeWidget({ section }: { section: TheaterSection }) {
@@ -502,12 +689,12 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
       {sections.map((section, index) => section.type === "theater" ? (
         <details className={`theater-card theater-card--${resolvedConfig.theaterTheme}`} open key={`theater-${index}-${section.title}`}>
           <summary><span>✦</span>{section.title}</summary>
-          <div className="theater-card-body"><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} /></div>
+          <div className="theater-card-body"><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} statusSource={source} /></div>
         </details>
       ) : section.type === "status" || section.type === "widget" ? (
         <NativeWidget section={section} key={`${section.type}-${index}-${section.title}`} />
       ) : (
-        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} /></div>
+        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} statusSource={source} /></div>
       ))}
       {showWarnings && result.warnings.length > 0 ? <div className="renderer-warnings" role="status">{result.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div> : null}
     </div>

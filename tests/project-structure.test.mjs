@@ -342,6 +342,11 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(component, /isInertLoadingPlaceholder/);
   assert.match(component, /正在\|正为你/);
   assert.match(component, /rendering\|loading\|generating/);
+  assert.match(component, /extractMessageStatus/);
+  assert.match(component, /data-lunemir-status-compat/);
+  assert.match(component, /script\[type=\"application\/json\"\]/);
+  assert.doesNotMatch(component, /PresetCompatibilityContext/);
+  assert.doesNotMatch(component, /尚无已确认的长期记忆/);
   assert.match(renderer, /:::status/);
   assert.match(renderer, /UI_PANEL/);
   assert.match(editor, /小剧场与输出美化/);
