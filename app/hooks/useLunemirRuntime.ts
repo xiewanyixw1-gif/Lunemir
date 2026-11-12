@@ -1939,6 +1939,7 @@ export function useLunemirRuntime() {
           modules,
           systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
           postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          promptFilters: values.promptFilters.map((rule) => ({ ...rule })),
           modelPatch: { ...values.modelPatch },
           outputRenderer: normalizeOutputRenderer(values.outputRenderer),
           updatedAt: now,
@@ -1951,6 +1952,7 @@ export function useLunemirRuntime() {
           modules,
           systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
           postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          promptFilters: values.promptFilters.map((rule) => ({ ...rule })),
           modelPatch: { ...values.modelPatch },
           outputRenderer: normalizeOutputRenderer(values.outputRenderer),
           raw: {},
@@ -1973,6 +1975,7 @@ export function useLunemirRuntime() {
       name: `${source.name} · 副本`,
       sourceName: source.sourceName || source.name,
       modules: source.modules?.map((module, index) => ({ ...module, id: createId("prompt"), order: index })),
+      promptFilters: source.promptFilters?.map((rule) => ({ ...rule, id: createId("prompt-filter") })),
       modelPatch: { ...source.modelPatch },
       outputRenderer: normalizeOutputRenderer(source.outputRenderer),
       raw: { ...source.raw },
@@ -2021,6 +2024,7 @@ export function useLunemirRuntime() {
       ...(preset.modelPatch.maxTokens !== undefined ? { openai_max_tokens: preset.modelPatch.maxTokens } : {}),
       ...(preset.modelPatch.contextLimit !== undefined ? { openai_max_context: preset.modelPatch.contextLimit } : {}),
       lunemir_output_renderer: normalizeOutputRenderer(preset.outputRenderer),
+      lunemir_prompt_filters: preset.promptFilters ?? [],
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
     const url = URL.createObjectURL(blob);

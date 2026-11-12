@@ -323,6 +323,9 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
     readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
   ]);
   assert.match(renderer, /normalizeImportedOutputRenderer/);
+  assert.match(renderer, /normalizeImportedPromptFilters/);
+  assert.match(renderer, /applyPromptFilters/);
+  assert.match(renderer, /promptOnly/);
   assert.match(renderer, /likelyUnsafeRegex/);
   assert.match(renderer, /script\|iframe\|object\|embed/);
   assert.match(renderer, /presetUsesCustomPresentation/);
@@ -336,6 +339,8 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(component, /replace\(\/url/);
   assert.match(component, /safeHref/);
   assert.match(component, /theater-card/);
+  assert.match(component, /snowPattern/);
+  assert.match(component, /unwrapSnowTheater/);
   assert.match(component, /native-widget/);
   assert.match(component, /safe-html-fence/);
   assert.match(component, /knownLabels/);
@@ -353,12 +358,17 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(editor, /隔离渲染预设 HTML\/CSS/);
   assert.match(editor, /识别状态栏与原生组件/);
   assert.match(editor, /Regex 美化规则/);
+  assert.match(editor, /renderer-import-summary/);
   assert.match(runtime, /lunemir_output_renderer/);
   assert.match(importer, /normalizeImportedOutputRenderer/);
+  assert.match(importer, /normalizeImportedPromptFilters/);
+  assert.match(importer, /raw\.findRegex/);
   assert.match(prototype, /查看原文/);
   assert.match(prototype, /达到输出上限/);
   assert.match(runtime, /finishReason/);
   assert.match(context, /当前角色卡或预设已经带有专属的状态栏\/Regex 后处理器/);
+  assert.match(context, /applyPromptFilters/);
+  assert.match(context, /replaceRandomMacros/);
   assert.match(context, /原生组件回退协议/);
 });
 

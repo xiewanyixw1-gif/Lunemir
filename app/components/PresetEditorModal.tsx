@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { createOutputRegexRule, normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
 import { analyzePromptModules, createPromptModule } from "../../lib/lunemir/preset";
-import type { OutputRegexRule, OutputRendererConfig, PresetEditorValues, PresetRecord, PromptModule } from "../../lib/lunemir/types";
+import type { OutputRegexRule, OutputRendererConfig, PresetEditorValues, PresetRecord, PromptFilterRule, PromptModule } from "../../lib/lunemir/types";
 import { SafeMessageContent } from "./SafeMessageContent";
 
 type Props = {
@@ -17,7 +17,7 @@ type Props = {
 };
 
 function initialModules(preset?: PresetRecord) {
-  if (preset?.modules) return preset.modules.map((module) => ({ ...module }));
+  if (preset?.modules?.length) return preset.modules.map((module) => ({ ...module }));
   const legacy: PromptModule[] = [];
   if (preset?.systemPrompt) legacy.push({ ...createPromptModule(legacy.length), name: "System Prompt", content: preset.systemPrompt });
   if (preset?.postHistoryInstructions) legacy.push({ ...createPromptModule(legacy.length), name: "Post-History Instructions", content: preset.postHistoryInstructions, position: "post_history" });
@@ -32,6 +32,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   const [temperature, setTemperature] = useState(preset?.modelPatch.temperature?.toString() ?? "");
   const [maxTokens, setMaxTokens] = useState(preset?.modelPatch.maxTokens?.toString() ?? "");
   const [contextLimit, setContextLimit] = useState(preset?.modelPatch.contextLimit?.toString() ?? "");
+  const [promptFilters, setPromptFilters] = useState(() => preset?.promptFilters?.map((rule) => ({ ...rule })) ?? []);
   const [outputRenderer, setOutputRenderer] = useState(() => normalizeOutputRenderer(preset?.outputRenderer));
   const [rendererPreview, setRendererPreview] = useState("<style>\n.moon-status{display:grid;gap:8px;border:1px solid #8f7cff55;border-radius:18px;padding:14px;background:linear-gradient(145deg,#241d49dd,#0c0b20dd);color:#f5f0ff}\n.moon-status header{display:flex;justify-content:space-between;color:#b8a9ff}\n.moon-status dl{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:0}\n.moon-status dl div{border-radius:10px;padding:8px;background:#ffffff0b}\n.moon-status dt{font-size:11px;opacity:.65}.moon-status dd{margin:3px 0 0}\n</style>\n<section class=\"moon-status\"><header><strong>月港状态</strong><span>23:40</span></header><dl><div><dt>地点</dt><dd>旧城区</dd></div><div><dt>关系</dt><dd>信任 68</dd></div></dl></section>");
   const [busy, setBusy] = useState(false);
@@ -39,6 +40,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   const activeIndex = Math.max(0, modules.findIndex((module) => module.id === activeModuleId));
   const activeModule = modules[activeIndex];
   const warnings = analyzePromptModules(modules);
+  const enabledPromptFilterCount = promptFilters.filter((rule) => rule.enabled).length;
 
   function updateModule(patch: Partial<PromptModule>) {
     setModules((current) => current.map((module) => module.id === activeModuleId ? { ...module, ...patch } : module));
@@ -67,6 +69,10 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
       ...current,
       regexRules: current.regexRules.filter((rule) => rule.id !== ruleId),
     }));
+  }
+
+  function updatePromptFilter(ruleId: string, patch: Partial<PromptFilterRule>) {
+    setPromptFilters((current) => current.map((rule) => rule.id === ruleId ? { ...rule, ...patch } : rule));
   }
 
   function addModule() {
@@ -126,6 +132,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
           ...(maxTokens.trim() ? { maxTokens: Number(maxTokens) } : {}),
           ...(contextLimit.trim() ? { contextLimit: Number(contextLimit) } : {}),
         },
+        promptFilters,
         outputRenderer: normalizeOutputRenderer(outputRenderer),
       });
     } finally {
@@ -193,6 +200,20 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
           <details className="preset-renderer-settings" open>
             <summary><span><strong>小剧场与输出美化</strong><small>安全渲染 Markdown、卡片和 Regex；不会执行脚本。</small></span><i>{outputRenderer.enabled ? "已启用" : "已关闭"}</i></summary>
             <div className="preset-renderer-body">
+              {promptFilters.length > 0 ? (
+                <div className="renderer-import-summary" role="note">
+                  <strong>请求前历史过滤</strong>
+                  <small>{enabledPromptFilterCount}/{promptFilters.length} 条启用 · 只处理发送给模型的上下文副本，不会改动聊天记录。</small>
+                  <div className="renderer-filter-list">
+                    {promptFilters.map((rule) => (
+                      <label key={rule.id}>
+                        <input type="checkbox" checked={rule.enabled} onChange={(event) => updatePromptFilter(rule.id, { enabled: event.target.checked })} />
+                        <span>{rule.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
               <div className="renderer-options">
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.enabled} onChange={(event) => updateRenderer({ enabled: event.target.checked })} /><span><strong>启用输出美化</strong><small>关闭后聊天区始终显示模型原文。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.markdown} onChange={(event) => updateRenderer({ markdown: event.target.checked })} /><span><strong>Markdown 与安全 HTML 转换</strong><small>HTML 只转换为安全排版，不运行脚本和外链资源。</small></span></label>

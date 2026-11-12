@@ -1,5 +1,5 @@
 import { createId } from "./defaults";
-import type { OutputRegexRule, OutputRendererConfig, Role } from "./types";
+import type { OutputRegexRule, OutputRendererConfig, PromptFilterRule, Role } from "./types";
 
 const ALLOWED_REGEX_FLAGS = new Set(["g", "i", "m", "s", "u"]);
 const MAX_RULES = 40;
@@ -73,6 +73,7 @@ export function normalizeOutputRenderer(config?: Partial<OutputRendererConfig> |
 }
 
 function findImportedRegexScripts(raw: UnknownRecord) {
+  if (asString(raw.findRegex ?? raw.find_regex ?? raw.pattern)) return [raw];
   const extensions = asRecord(raw.extensions);
   const extensionSettings = asRecord(raw.extension_settings);
   const candidates = [
@@ -111,6 +112,58 @@ function findImportedRegexScripts(raw: UnknownRecord) {
     }
   }
   return undefined;
+}
+
+function optionalDepth(value: unknown) {
+  const parsed = typeof value === "number" ? value : typeof value === "string" && value.trim() ? Number(value) : Number.NaN;
+  return Number.isFinite(parsed) && parsed >= 0 ? Math.floor(parsed) : undefined;
+}
+
+export function normalizeImportedPromptFilters(raw: UnknownRecord): PromptFilterRule[] {
+  const nativeFilters = Array.isArray(raw.lunemir_prompt_filters)
+    ? raw.lunemir_prompt_filters.map((value) => ({ ...asRecord(value), promptOnly: true }))
+    : [];
+  const importedScripts = [...nativeFilters, ...(findImportedRegexScripts(raw) ?? [])];
+  const normalized = importedScripts.slice(0, MAX_RULES).flatMap((value, index) => {
+    const script = asRecord(value);
+    if (script.promptOnly !== true) return [];
+    const literal = parseRegexLiteral(asString(script.findRegex ?? script.find_regex ?? script.pattern));
+    if (!literal.pattern) return [];
+    const placement = Array.isArray(script.placement) ? script.placement : [];
+    const assistantOnly = script.scope === "all"
+      ? false
+      : script.scope === "assistant" || placement.length === 0 || placement.some((item) => item === 2 || item === "ai_output" || item === "assistant");
+    return [{
+      id: asString(script.id) || createId("prompt-filter"),
+      name: asString(script.scriptName ?? script.name) || `历史过滤 ${index + 1}`,
+      pattern: literal.pattern,
+      replacement: asString(script.replaceString ?? script.replace_string ?? script.replacement),
+      flags: cleanFlags(literal.flags || asString(script.flags)),
+      enabled: script.enabled !== false && script.disabled !== true,
+      scope: assistantOnly ? "assistant" as const : "all" as const,
+      minDepth: optionalDepth(script.minDepth ?? script.min_depth),
+      maxDepth: optionalDepth(script.maxDepth ?? script.max_depth),
+    }];
+  });
+  return normalized.filter((rule, index) => normalized.findIndex((candidate) => (
+    candidate.id === rule.id || (candidate.pattern === rule.pattern && candidate.replacement === rule.replacement)
+  )) === index);
+}
+
+export function applyPromptFilters(content: string, rules: PromptFilterRule[] = [], role: Role = "assistant", depth = 0) {
+  let output = content.slice(0, MAX_OUTPUT_LENGTH);
+  rules.slice(0, MAX_RULES).forEach((rule) => {
+    if (!rule.enabled || !rule.pattern || (rule.scope === "assistant" && role !== "assistant")) return;
+    if (rule.minDepth !== undefined && depth < rule.minDepth) return;
+    if (rule.maxDepth !== undefined && depth > rule.maxDepth) return;
+    if (likelyUnsafeRegex(rule.pattern)) return;
+    try {
+      output = output.replace(new RegExp(rule.pattern, cleanFlags(rule.flags)), rule.replacement).slice(0, MAX_OUTPUT_LENGTH);
+    } catch {
+      // Invalid imported filters are ignored without changing stored history.
+    }
+  });
+  return output;
 }
 
 export function normalizeImportedOutputRenderer(raw: UnknownRecord) {

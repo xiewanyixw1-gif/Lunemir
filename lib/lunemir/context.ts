@@ -13,8 +13,8 @@ import type {
   StoryState,
   StorySummary,
 } from "./types";
-import { replaceRoleMacros } from "./macros";
-import { normalizeOutputRenderer, presetUsesCustomPresentation, resolveOutputRendererConfig } from "./output-renderer";
+import { replaceRandomMacros, replaceRoleMacros } from "./macros";
+import { applyPromptFilters, normalizeOutputRenderer, presetUsesCustomPresentation, resolveOutputRendererConfig } from "./output-renderer";
 
 export type ContextOptions = {
   persona?: PersonaRecord | null;
@@ -122,7 +122,11 @@ export function compileContext(
 ): CompiledContext {
   const persona = options.persona;
   const preset = options.preset;
-  const replaceMacros = (value: string) => replaceRoleMacros(value, character.name, persona?.name || "用户");
+  const promptSeed = `${character.id}:${persona?.id ?? "default"}:${messages.at(-1)?.id ?? "opening"}:${messages.length}`;
+  const replaceMacros = (value: string) => replaceRandomMacros(
+    replaceRoleMacros(value, character.name, persona?.name || "用户"),
+    promptSeed,
+  );
   const phoneEvents = (options.storyEvents ?? [])
     .filter((event) => event.status === "committed" && (event.eventType === "phone_message_received" || event.eventType === "phone_message_sent"))
     .slice(-12);
@@ -206,10 +210,21 @@ export function compileContext(
     .filter(Boolean)
     .join("\n\n---\n\n");
   const coveredMessageCount = summaryText ? Math.min(messages.length, options.storySummary?.coveredMessageCount ?? 0) : 0;
-  const historySource = messages
+  const historyCandidates = messages
     .slice(coveredMessageCount)
     .filter((message) => message.content.trim())
     .slice(-40);
+  const historySource = historyCandidates
+    .map((message, index) => ({
+      ...message,
+      content: applyPromptFilters(
+        message.content,
+        preset?.promptFilters,
+        message.role,
+        historyCandidates.length - index - 1,
+      ),
+    }))
+    .filter((message) => message.content.trim());
   const historyText = historySource.map((message) => replaceMacros(message.content)).join("\n");
 
   const segments: ContextSegment[] = [

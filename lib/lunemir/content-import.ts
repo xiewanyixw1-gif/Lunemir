@@ -1,6 +1,6 @@
 import { normalizeCharacterCard, normalizeLorebookEntries, parseCharacterFile } from "./character-import";
 import { createId } from "./defaults";
-import { normalizeImportedOutputRenderer } from "./output-renderer";
+import { normalizeImportedOutputRenderer, normalizeImportedPromptFilters } from "./output-renderer";
 import type { ContentImportPreview, LorebookRecord, PresetRecord } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
@@ -97,20 +97,23 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     ...(maxTokens !== undefined ? { maxTokens } : {}),
     ...(contextLimit !== undefined ? { contextLimit } : {}),
   };
-  if (modules.length === 0 && Object.keys(modelPatch).length === 0) {
-    throw new Error("没有在预设中找到提示词或支持的采样参数。");
+  const outputRenderer = normalizeImportedOutputRenderer(raw);
+  const promptFilters = normalizeImportedPromptFilters(raw);
+  if (modules.length === 0 && Object.keys(modelPatch).length === 0 && outputRenderer.regexRules.length === 0 && promptFilters.length === 0) {
+    throw new Error("没有在预设中找到提示词、Regex 规则或支持的采样参数。");
   }
   const now = new Date().toISOString();
   const record: PresetRecord = {
     id: createId("preset"),
     schemaVersion: 1,
-    name: asString(raw.name) || fileLabel(sourceName),
+    name: asString(raw.name ?? raw.scriptName) || fileLabel(sourceName),
     sourceName,
     systemPrompt,
     postHistoryInstructions,
     modules,
+    promptFilters,
     modelPatch,
-    outputRenderer: normalizeImportedOutputRenderer(raw),
+    outputRenderer,
     raw,
     createdAt: now,
     updatedAt: now,
@@ -118,9 +121,9 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
   return {
     kind: "preset",
     record,
-    warnings: prompts.length === 0 ? ["该预设没有 prompts 数组，仅会应用采样参数。"] : [],
-    detectedFormat: "CHAT PRESET · JSON",
-    summary: `${enabledPrompts.length}/${modules.length} 段提示词启用 · ${Object.keys(modelPatch).length} 个模型参数`,
+    warnings: prompts.length === 0 && promptFilters.length === 0 ? ["该预设没有 prompts 数组，仅会应用采样参数或输出 Regex。"] : [],
+    detectedFormat: asString(raw.findRegex ?? raw.find_regex) ? "PROMPT FILTER · REGEX" : "CHAT PRESET · JSON",
+    summary: `${enabledPrompts.length}/${modules.length} 段提示词启用 · ${promptFilters.length} 条历史过滤 · ${outputRenderer.regexRules.length} 条输出规则`,
   };
 }
 
@@ -155,7 +158,7 @@ export async function parseContentFile(file: File): Promise<ContentImportPreview
     };
   }
   if (raw.entries && !raw.prompts) return normalizeStandaloneLorebook(raw, file.name);
-  if (raw.prompts || "openai_max_context" in raw || "openai_max_tokens" in raw || "chat_completion_source" in raw) {
+  if (raw.prompts || raw.findRegex || raw.find_regex || "openai_max_context" in raw || "openai_max_tokens" in raw || "chat_completion_source" in raw) {
     return normalizePreset(raw, file.name);
   }
   throw new Error("无法识别文件内容。请选择角色卡、世界书或聊天预设 JSON。");

@@ -631,7 +631,7 @@ function NativeWidget({ section }: { section: TheaterSection }) {
   );
 }
 
-function splitRichSections(content: string, theaterEnabled: boolean, widgetsEnabled: boolean) {
+function splitNativeSections(content: string, theaterEnabled: boolean, widgetsEnabled: boolean) {
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const sections: TheaterSection[] = [];
   let text: string[] = [];
@@ -668,6 +668,60 @@ function splitRichSections(content: string, theaterEnabled: boolean, widgetsEnab
     });
   }
   flushText();
+  return sections;
+}
+
+function plainSummary(value: string) {
+  return value
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;|&#160;/gi, " ")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 120);
+}
+
+function unwrapSnowTheater(value: string) {
+  const details = value.match(/^\s*<details\b[^>]*>\s*<summary\b[^>]*>([\s\S]*?)<\/summary\s*>([\s\S]*?)<\/details\s*>\s*$/i);
+  if (details) {
+    return {
+      title: plainSummary(details[1]) || "小剧场",
+      content: details[2].trim(),
+    };
+  }
+
+  const summary = value.match(/<summary\b[^>]*>([\s\S]*?)<\/summary\s*>/i);
+  return {
+    title: plainSummary(summary?.[1] ?? "") || "小剧场",
+    content: value
+      .replace(/<\/?details\b[^>]*>/gi, "")
+      .replace(/<summary\b[^>]*>[\s\S]*?<\/summary\s*>/i, "")
+      .trim(),
+  };
+}
+
+function splitRichSections(content: string, theaterEnabled: boolean, widgetsEnabled: boolean) {
+  if (!theaterEnabled || !/<snow\b/i.test(content)) {
+    return splitNativeSections(content, theaterEnabled, widgetsEnabled);
+  }
+
+  const sections: TheaterSection[] = [];
+  const snowPattern = /<snow\b[^>]*>([\s\S]*?)<\/snow\s*>/gi;
+  let cursor = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = snowPattern.exec(content)) !== null) {
+    sections.push(...splitNativeSections(content.slice(cursor, match.index), theaterEnabled, widgetsEnabled));
+    const theater = unwrapSnowTheater(match[1]);
+    if (theater.content) sections.push({ type: "theater", ...theater });
+    cursor = match.index + match[0].length;
+  }
+
+  sections.push(...splitNativeSections(content.slice(cursor), theaterEnabled, widgetsEnabled));
   return sections;
 }
 

@@ -137,6 +137,11 @@ export type OutputRegexRule = {
   scope: "assistant" | "all";
 };
 
+export type PromptFilterRule = OutputRegexRule & {
+  minDepth?: number;
+  maxDepth?: number;
+};
+
 export type OutputRendererConfig = {
   enabled: boolean;
   markdown: boolean;
@@ -155,6 +160,7 @@ export type PresetRecord = {
   systemPrompt: string;
   postHistoryInstructions: string;
   modules?: PromptModule[];
+  promptFilters?: PromptFilterRule[];
   modelPatch: Partial<Pick<ModelConfig, "temperature" | "maxTokens" | "contextLimit">>;
   outputRenderer?: OutputRendererConfig;
   raw: Record<string, unknown>;
@@ -164,6 +170,7 @@ export type PresetRecord = {
 
 export type PresetEditorValues = Pick<PresetRecord, "name" | "modelPatch"> & {
   modules: PromptModule[];
+  promptFilters: PromptFilterRule[];
   outputRenderer: OutputRendererConfig;
 };
 
