@@ -167,8 +167,11 @@ export function compileContext(
     rendererConfig,
     `${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`,
   );
-  const outputProtocol = hasCustomPresentation
+  const rendererProvidesTemplate = presetUsesCustomPresentation(rendererConfig);
+  const outputProtocol = rendererProvidesTemplate
     ? `输出呈现规则：当前角色卡或预设已经带有专属的状态栏/Regex 后处理器。你只需要输出它要求的动态字段、占位标记和剧情正文；CSS、<style>、完整 HTML 模板与样式说明属于渲染资源，禁止在回复中复述、解释或改写。不要额外输出 Lunemir 的 :::status / :::widget，也不要再生成第二套状态栏。正文必须保持正常段落结构，并放在专属模板规定的正文区域。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
+    : hasCustomPresentation
+      ? `输出呈现规则：当前角色卡或预设在提示词中定义了专属状态栏或 HTML/CSS 格式，但没有可由程序复用的 Regex 模板。请严格按照其中规定的完整 HTML 结构输出一次，不要改写成 Lunemir 的 :::status / :::widget，也不要同时生成第二套状态栏。需要的 <style> 可以随该 HTML 输出一次，不要把 CSS 当作解释性正文，不要使用 Markdown 代码围栏包裹 HTML。小说正文必须保持正常段落和空行，并放在模板指定的 content、正文或主内容区域。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
     : preset?.outputRenderer?.enabled && rendererConfig.widgets
       ? `Lunemir 原生组件回退协议：只有当当前预设明确要求状态栏或小组件、但没有规定自己的输出模板时，才使用下面的纯文本格式：
 :::status 状态栏标题
@@ -177,7 +180,7 @@ export function compileContext(
 情绪：角色当前情绪
 :::
 其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。角色卡或预设没有要求组件时，不要额外生成状态栏。`
-      : "";
+        : "";
   const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
   const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";

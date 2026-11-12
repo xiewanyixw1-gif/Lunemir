@@ -326,6 +326,8 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(renderer, /likelyUnsafeRegex/);
   assert.match(renderer, /script\|iframe\|object\|embed/);
   assert.match(renderer, /presetUsesCustomPresentation/);
+  assert.match(renderer, /hasCssTemplate/);
+  assert.match(renderer, /style\|content\|div/);
   assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
   assert.match(component, /SAFE_HTML_TAGS/);
   assert.match(component, /new DOMParser/);
@@ -592,9 +594,12 @@ test("prioritizes character-card renderers without corrupting story paragraphs",
   assert.match(renderer, /normalizeLeakedStyleSource/);
   assert.match(renderer, /stripNativeFallbackSections/);
   assert.match(context, /CSS、<style>、完整 HTML 模板与样式说明属于渲染资源/);
+  assert.match(context, /没有可由程序复用的 Regex 模板/);
+  assert.match(context, /rendererProvidesTemplate/);
   assert.match(prototype, /resolveOutputRendererConfig/);
   assert.match(prototype, /自带状态栏/);
   assert.match(editor, /启用角色卡自带状态栏与美化/);
   assert.match(component, /\.lm-preset-root content\{display:block;white-space:pre-wrap/);
+  assert.match(component, /useIsolatedRenderer/);
   assert.match(styles, /character-renderer-toggle/);
 });

@@ -246,7 +246,7 @@ function RichBlocks({ content, isolatedHtml = true }: { content: string; isolate
     && !trimmed.includes("```")
     && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|content|details|div|h[1-4]|main|ol|p|pre|section|status|statusbar|table|ul|widget)\b/i.test(trimmed)
       || /<style\b/i.test(trimmed));
-  if (!rawHtmlDocument) return <MarkdownBlocks content={content} />;
+  if (!rawHtmlDocument) return <MarkdownBlocks content={content} isolatedHtml={isolatedHtml} />;
   return isolatedHtml ? <IsolatedPresetHtml content={content} /> : <SafeHtmlContent content={content} />;
 }
 
@@ -276,7 +276,7 @@ function withLineBreaks(value: string) {
   ));
 }
 
-function MarkdownBlocks({ content }: { content: string }) {
+function MarkdownBlocks({ content, isolatedHtml = true }: { content: string; isolatedHtml?: boolean }) {
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -301,10 +301,13 @@ function MarkdownBlocks({ content }: { content: string }) {
       if (index < lines.length) index += 1;
       const codeContent = code.join("\n");
       if (/^html?$/i.test(language)) {
+        const useIsolatedRenderer = isolatedHtml && /<style\b|\bclass\s*=|\bid\s*=/i.test(codeContent);
         nodes.push(
           <section className="safe-html-fence" key={`html-${index}`}>
             {title ? <header><span>HTML</span><strong>{title}</strong></header> : null}
-            {/<\/?[a-z][\s\S]*?>/i.test(codeContent) ? <SafeHtmlContent content={codeContent} /> : <MarkdownBlocks content={codeContent} />}
+            {/<\/?[a-z][\s\S]*?>/i.test(codeContent)
+              ? useIsolatedRenderer ? <IsolatedPresetHtml content={codeContent} /> : <SafeHtmlContent content={codeContent} />
+              : <MarkdownBlocks content={codeContent} isolatedHtml={isolatedHtml} />}
           </section>,
         );
       } else {

@@ -341,8 +341,12 @@ export function presetUsesCustomPresentation(config: OutputRendererConfig, promp
     .filter((rule) => rule.enabled)
     .map((rule) => rule.replacement)
     .join("\n");
-  return /<(?:!doctype|style|div|section|article|header|footer|table|details|progress|meter|status(?:block|-bar)?|character-status|widget(?:block|-block)?)\b|\bclass\s*=|\bid\s*=|\[(?:ui_panel|status_panel|statusbar)\]/i
-    .test(`${promptText}\n${rendererText}`);
+  const presentationSource = `${promptText}\n${rendererText}`;
+  const hasHtmlTemplate = /<(?:!doctype|style|content|div|section|article|header|footer|table|details|progress|meter|status(?:block|-bar)?|character-status|widget(?:block|-block)?)\b|\bclass\s*=|\bid\s*=|\[(?:ui_panel|status_panel|statusbar)\]/i
+    .test(presentationSource);
+  const hasCssTemplate = /(?:^|\n)\s*(?:[.#][a-z_][\w-]*(?:\s+[.#]?[a-z_][\w-]*)*|@(?:media|supports|container)\b[^\n{]*)\s*\{/im
+    .test(presentationSource);
+  return hasHtmlTemplate || hasCssTemplate;
 }
 
 export type OutputTransformResult = {
