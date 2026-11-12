@@ -84,7 +84,33 @@ function findImportedRegexScripts(raw: UnknownRecord) {
     extensionSettings.regex,
     extensionSettings.regex_scripts,
   ];
-  return candidates.find(Array.isArray) as unknown[] | undefined;
+  const direct = candidates.flatMap((candidate) => Array.isArray(candidate) ? candidate : []);
+  if (direct.length > 0) return direct;
+
+  const queue: Array<{ value: UnknownRecord; depth: number }> = [{ value: raw, depth: 0 }];
+  const visited = new Set<UnknownRecord>();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || visited.has(current.value) || current.depth > 4) continue;
+    visited.add(current.value);
+    for (const value of Object.values(current.value)) {
+      if (Array.isArray(value)) {
+        const scripts = value.filter((item) => {
+          const record = asRecord(item);
+          return Boolean(asString(record.findRegex ?? record.find_regex ?? record.pattern));
+        });
+        if (scripts.length > 0) return scripts;
+        value.forEach((item) => {
+          const record = asRecord(item);
+          if (Object.keys(record).length > 0) queue.push({ value: record, depth: current.depth + 1 });
+        });
+      } else {
+        const record = asRecord(value);
+        if (Object.keys(record).length > 0) queue.push({ value: record, depth: current.depth + 1 });
+      }
+    }
+  }
+  return undefined;
 }
 
 export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
@@ -131,6 +157,35 @@ export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
   return normalizeOutputRenderer({ regexRules });
 }
 
+export function normalizeEmbeddedOutputRenderer(extensions?: Record<string, unknown> | null) {
+  if (!extensions) return null;
+  const renderer = normalizeImportedOutputRenderer({ extensions });
+  return renderer.regexRules.length > 0 ? renderer : null;
+}
+
+export function resolveOutputRendererConfig(
+  presetConfig?: Partial<OutputRendererConfig> | null,
+  characterExtensions?: Record<string, unknown> | null,
+  characterRendererEnabled = true,
+) {
+  const presetRenderer = presetConfig ? normalizeOutputRenderer(presetConfig) : null;
+  const characterRenderer = characterRendererEnabled
+    ? normalizeEmbeddedOutputRenderer(characterExtensions)
+    : null;
+  if (!presetRenderer && !characterRenderer) return null;
+  const base = presetRenderer ?? characterRenderer ?? DEFAULT_OUTPUT_RENDERER;
+  const rules = [
+    ...(characterRenderer?.regexRules ?? []).map((rule) => ({ ...rule, id: `character-${rule.id}` })),
+    ...(presetRenderer?.regexRules ?? []).map((rule) => ({ ...rule, id: `preset-${rule.id}` })),
+  ];
+  return normalizeOutputRenderer({
+    ...base,
+    enabled: Boolean(characterRenderer || presetRenderer?.enabled),
+    isolatedHtml: Boolean(characterRenderer) || base.isolatedHtml,
+    regexRules: rules,
+  });
+}
+
 function likelyUnsafeRegex(pattern: string) {
   if (pattern.length > MAX_PATTERN_LENGTH) return true;
   return /(\([^)]*[+*][^)]*\))[+*{]/.test(pattern) || /(\.\*){2,}/.test(pattern);
@@ -165,6 +220,101 @@ function normalizeBracketWidgets(value: string) {
   });
 }
 
+type TextRange = { start: number; end: number; css: string };
+
+function balancedCssRange(value: string, start: number, openingBrace: number) {
+  let depth = 0;
+  let quote = "";
+  let escaped = false;
+  for (let index = openingBrace; index < value.length; index += 1) {
+    const character = value[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (character === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (quote) {
+      if (character === quote) quote = "";
+      continue;
+    }
+    if (character === "\"" || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (character === "{") depth += 1;
+    if (character === "}") {
+      depth -= 1;
+      if (depth === 0) return { start, end: index + 1, css: value.slice(start, index + 1) };
+    }
+  }
+  return null;
+}
+
+export function normalizeLeakedStyleSource(value: string) {
+  if (!value.includes("{") || !value.includes("}")) return value;
+  if (/<style\b[^>]*>[\s\S]*?<\/style\s*>/i.test(value)) return value;
+
+  const ranges: TextRange[] = [];
+  const fencedCss = /```(?:css|scss|less)\s*\r?\n([\s\S]*?)```/gi;
+  let fenceMatch: RegExpExecArray | null;
+  while ((fenceMatch = fencedCss.exec(value)) !== null) {
+    ranges.push({ start: fenceMatch.index, end: fencedCss.lastIndex, css: fenceMatch[1] });
+  }
+
+  const selector = /(?:^|\n)[ \t]*(?:@(?:media|supports|container|keyframes|-webkit-keyframes)\b[^\n{]*|[.#:\[][^{\n]{0,240}|[a-z][\w-]*(?:[.#:\[>+~][^{\n]{0,220}|\s+[.#:\[a-z][^{\n]{0,200}))\{/gim;
+  let selectorMatch: RegExpExecArray | null;
+  while ((selectorMatch = selector.exec(value)) !== null) {
+    const openingBrace = selector.lastIndex - 1;
+    const lineOffset = selectorMatch[0].startsWith("\n") ? 1 : 0;
+    const range = balancedCssRange(value, selectorMatch.index + lineOffset, openingBrace);
+    if (!range) continue;
+    const declarations = range.css.match(/(?:^|[;{])\s*--?[a-z][\w-]*\s*:|(?:^|[;{])\s*[a-z][\w-]*\s*:/gim) ?? [];
+    if (declarations.length < 2) continue;
+    ranges.push(range);
+    selector.lastIndex = range.end;
+  }
+
+  if (ranges.length === 0) return value;
+  const ordered: TextRange[] = [];
+  ranges
+    .sort((left, right) => left.start - right.start || right.end - left.end)
+    .forEach((range) => {
+      const previous = ordered.at(-1);
+      if (!previous || range.start >= previous.end) ordered.push(range);
+    });
+  const css = ordered.map((range) => range.css).join("\n");
+  const declarationCount = css.match(/(?:^|[;{])\s*(?:--)?[a-z][\w-]*\s*:/gim)?.length ?? 0;
+  if (css.length < 240 || declarationCount < 4) return value;
+
+  let cursor = 0;
+  let insertionIndex = 0;
+  let output = "";
+  ordered.forEach((range, index) => {
+    output += value.slice(cursor, range.start);
+    if (index === 0) insertionIndex = output.length;
+    cursor = range.end;
+  });
+  output += value.slice(cursor);
+  output = output
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/^\s*=+(?:\s*\/)?\s*$/gm, "")
+    .replace(/\n{4,}/g, "\n\n\n");
+  const hasRenderableMarkup = /<\/?(?:article|aside|blockquote|content|details|div|footer|header|main|section|status|table|widget|[a-z][\w]*-[\w-]+)\b/i.test(output);
+  if (!hasRenderableMarkup) return output.trim();
+  const style = `<style>${css}</style>\n`;
+  return `${output.slice(0, insertionIndex)}${style}${output.slice(insertionIndex)}`.trim();
+}
+
+function stripNativeFallbackSections(value: string) {
+  return value.replace(
+    /(?:^|\n)[ \t]*:::(?:status|widget)(?:[^\n]*)\r?\n[\s\S]*?\r?\n[ \t]*:::[ \t]*(?=\r?\n|$)/gi,
+    "\n",
+  );
+}
+
 function normalizeSafeHtml(value: string, preservePresetComponents = false) {
   let output = normalizeBracketWidgets(value)
     .replace(/<!--[\s\S]*?-->/g, "")
@@ -177,8 +327,12 @@ function normalizeSafeHtml(value: string, preservePresetComponents = false) {
     output = output
       .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
       .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
+  } else if (/<style\b|\bclass\s*=|\bid\s*=|<\/?(?:content|statusbar|[a-z][\w]*-[\w-]+)\b/i.test(output)) {
+    // A character card or preset owns the presentation. Remove only Lunemir's
+    // generated fallback blocks so old replies cannot display two status bars.
+    output = stripNativeFallbackSections(output);
   }
-  return decodeSafeEntities(output).replace(/\n{4,}/g, "\n\n\n").trim();
+  return normalizeLeakedStyleSource(decodeSafeEntities(output)).replace(/\n{4,}/g, "\n\n\n").trim();
 }
 
 export function presetUsesCustomPresentation(config: OutputRendererConfig, promptText = "") {

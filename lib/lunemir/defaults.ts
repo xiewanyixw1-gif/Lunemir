@@ -127,6 +127,7 @@ export function createSampleCharacter(): CharacterRecord {
         extensions: {},
       },
     ],
+    embeddedRendererEnabled: true,
     extensions: {},
     raw: {},
     createdAt: now,

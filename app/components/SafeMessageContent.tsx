@@ -19,7 +19,7 @@ type TheaterSection = {
 };
 
 const SAFE_HTML_TAGS = new Set([
-  "a", "article", "b", "blockquote", "br", "character-status", "code", "dd", "del", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "header", "hr", "i", "img", "li", "main", "mark", "meter", "ol", "p", "pre", "progress", "rp", "rt", "ruby", "s", "section", "small", "span", "status", "status-bar", "statusblock", "story-widget", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "widget", "widget-block", "widgetblock",
+  "a", "article", "b", "blockquote", "br", "character-status", "code", "content", "dd", "del", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "header", "hr", "i", "img", "li", "main", "mark", "meter", "ol", "p", "pre", "progress", "rp", "rt", "ruby", "s", "section", "small", "span", "status", "status-bar", "statusbar", "statusblock", "story-widget", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "widget", "widget-block", "widgetblock",
 ]);
 const BLOCKED_HTML_TAGS = new Set(["script", "style", "iframe", "object", "embed", "svg", "math", "form", "input", "button", "textarea", "select", "video", "audio", "source", "link", "meta"]);
 const SAFE_STYLE_PROPERTIES = new Map<string, keyof CSSProperties>([
@@ -224,6 +224,8 @@ function IsolatedPresetHtml({ content }: { content: string }) {
       :host{display:block;width:100%;min-width:0;color:inherit;font:inherit}
       .lm-preset-root{position:relative;display:block;max-width:100%;overflow:hidden;contain:layout paint style;isolation:isolate;color:inherit;font:inherit;line-height:inherit}
       .lm-preset-root,.lm-preset-root *,.lm-preset-root *::before,.lm-preset-root *::after{box-sizing:border-box;max-width:100%}
+      .lm-preset-root content{display:block;white-space:pre-wrap;overflow-wrap:anywhere}
+      .lm-preset-root p{overflow-wrap:anywhere}
       .lm-preset-root table{width:100%;border-collapse:collapse}
       .lm-preset-root pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
       .lm-preset-root a{color:inherit}
@@ -242,7 +244,7 @@ function RichBlocks({ content, isolatedHtml = true }: { content: string; isolate
   const hasHtml = /<\/?[a-z][\s\S]*?>/i.test(trimmed);
   const rawHtmlDocument = hasHtml
     && !trimmed.includes("```")
-    && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|details|div|h[1-4]|main|ol|p|pre|section|table|ul)\b/i.test(trimmed)
+    && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|content|details|div|h[1-4]|main|ol|p|pre|section|status|statusbar|table|ul|widget)\b/i.test(trimmed)
       || /<style\b/i.test(trimmed));
   if (!rawHtmlDocument) return <MarkdownBlocks content={content} />;
   return isolatedHtml ? <IsolatedPresetHtml content={content} /> : <SafeHtmlContent content={content} />;

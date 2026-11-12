@@ -2,7 +2,7 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
-import { normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
+import { normalizeEmbeddedOutputRenderer, normalizeOutputRenderer, resolveOutputRendererConfig } from "../../lib/lunemir/output-renderer";
 import { replaceRoleMacros } from "../../lib/lunemir/macros";
 import type { LorebookRecord } from "../../lib/lunemir/types";
 import { useLunemirRuntime } from "../hooks/useLunemirRuntime";
@@ -261,8 +261,12 @@ export function LunemirPrototype() {
     : undefined;
   const activePresetId = runtime.activePreset?.id ?? "";
   const activeOutputRenderer = useMemo(
-    () => runtime.activePreset ? normalizeOutputRenderer(runtime.activePreset.outputRenderer) : null,
-    [runtime.activePreset],
+    () => resolveOutputRendererConfig(
+      runtime.activePreset?.outputRenderer,
+      runtime.activeCharacter?.extensions,
+      runtime.activeCharacter?.embeddedRendererEnabled !== false,
+    ),
+    [runtime.activeCharacter?.embeddedRendererEnabled, runtime.activeCharacter?.extensions, runtime.activePreset],
   );
   const nativeWidgetRenderer = useMemo(
     () => normalizeOutputRenderer({ enabled: true, markdown: true, theater: false, widgets: true, regexRules: [] }),
@@ -755,7 +759,7 @@ export function LunemirPrototype() {
                   <button className={`character-card ${["violet", "cyan", "rose"][index % 3]} ${runtime.activeCharacter?.id === character.id ? "is-active" : ""}`} onClick={() => { void runtime.selectCharacter(character); setSection("chat"); }}>
                     <span className="card-orb" style={character.avatarDataUrl ? { backgroundImage: `url(${character.avatarDataUrl})` } : undefined}>{character.avatarDataUrl ? "" : character.name.charAt(0)}</span>
                     <span className="character-card-copy"><strong>{character.name}</strong><p>{character.scenario || character.description || "暂未填写角色设定"}</p><small>{character.tags.slice(0, 3).join(" · ") || character.creator || character.sourceFormat}</small></span>
-                    <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地保存`}</em>
+                    <em>{runtime.activeCharacter?.id === character.id ? "正在对话" : `${character.spec.toUpperCase()} · 本地保存`}{normalizeEmbeddedOutputRenderer(character.extensions) ? character.embeddedRendererEnabled === false ? " · 状态栏已关闭" : " · 自带状态栏" : ""}</em>
                   </button>
                   <LibraryActionMenu label={`管理 ${character.name}`} actions={[
                     { label: "编辑角色", onSelect: () => setCharacterEditor({ mode: "edit", id: character.id }) },

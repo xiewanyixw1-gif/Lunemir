@@ -349,7 +349,7 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(prototype, /查看原文/);
   assert.match(prototype, /达到输出上限/);
   assert.match(runtime, /finishReason/);
-  assert.match(context, /预设已经定义了自己的 HTML\/CSS/);
+  assert.match(context, /当前角色卡或预设已经带有专属的状态栏\/Regex 后处理器/);
   assert.match(context, /原生组件回退协议/);
 });
 
@@ -572,4 +572,29 @@ test("shows model reasoning, safely renders HTML, and continues truncated stream
   assert.match(component, /safeStyleValue/);
   assert.match(styles, /message-reasoning/);
   assert.match(styles, /safe-html-content table/);
+});
+
+test("prioritizes character-card renderers without corrupting story paragraphs", async () => {
+  const [types, importer, renderer, context, prototype, editor, component, styles] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("app/components/CharacterEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
+    readFile(new URL("app/globals.css", root), "utf8"),
+  ]);
+  assert.match(types, /embeddedRendererEnabled\?: boolean/);
+  assert.match(importer, /embedded_renderer_enabled !== false/);
+  assert.match(renderer, /normalizeEmbeddedOutputRenderer/);
+  assert.match(renderer, /resolveOutputRendererConfig/);
+  assert.match(renderer, /normalizeLeakedStyleSource/);
+  assert.match(renderer, /stripNativeFallbackSections/);
+  assert.match(context, /CSS、<style>、完整 HTML 模板与样式说明属于渲染资源/);
+  assert.match(prototype, /resolveOutputRendererConfig/);
+  assert.match(prototype, /自带状态栏/);
+  assert.match(editor, /启用角色卡自带状态栏与美化/);
+  assert.match(component, /\.lm-preset-root content\{display:block;white-space:pre-wrap/);
+  assert.match(styles, /character-renderer-toggle/);
 });

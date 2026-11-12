@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { FormEvent } from "react";
+import { normalizeEmbeddedOutputRenderer } from "../../lib/lunemir/output-renderer";
 import type { CharacterEditorValues, CharacterRecord } from "../../lib/lunemir/types";
 
 type Props = {
@@ -31,11 +32,13 @@ function initialValues(character?: CharacterRecord): CharacterEditorValues {
     characterVersion: character?.characterVersion ?? "1.0",
     creatorNotes: character?.creatorNotes ?? "",
     avatarDataUrl: character?.avatarDataUrl,
+    embeddedRendererEnabled: character?.embeddedRendererEnabled !== false,
   };
 }
 
 export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, onExport, onDelete }: Props) {
   const [values, setValues] = useState(() => initialValues(character));
+  const embeddedRenderer = normalizeEmbeddedOutputRenderer(character?.extensions);
   const [tags, setTags] = useState(values.tags.join("，"));
   const [alternateGreetings, setAlternateGreetings] = useState(values.alternateGreetings.join("\n\n---\n\n"));
   const [busy, setBusy] = useState(false);
@@ -137,6 +140,20 @@ export function CharacterEditorModal({ character, onClose, onSave, onDuplicate, 
               <label className="wide"><span>创作者备注</span><textarea value={values.creatorNotes} onChange={(event) => update("creatorNotes", event.target.value)} rows={3} /></label>
             </div>
           </details>
+
+          {embeddedRenderer ? (
+            <label className="character-renderer-toggle">
+              <input
+                type="checkbox"
+                checked={values.embeddedRendererEnabled !== false}
+                onChange={(event) => update("embeddedRendererEnabled", event.target.checked)}
+              />
+              <span>
+                <strong>启用角色卡自带状态栏与美化</strong>
+                <small>检测到 {embeddedRenderer.regexRules.length} 条角色专属 Regex。启用后优先于预设和 Lunemir 原生状态栏，并在消息内隔离渲染。</small>
+              </span>
+            </label>
+          ) : null}
 
           {error && <p className="character-editor-error" role="alert">{error}</p>}
           <div className="character-editor-actions">

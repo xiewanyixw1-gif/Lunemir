@@ -45,6 +45,7 @@ export type CharacterRecord = {
   avatarDataUrl?: string;
   lorebookName: string;
   lorebookEntries: LorebookEntry[];
+  embeddedRendererEnabled?: boolean;
   extensions: Record<string, unknown>;
   raw: Record<string, unknown>;
   createdAt: string;
@@ -68,6 +69,7 @@ export type CharacterEditorValues = Pick<CharacterRecord,
   | "characterVersion"
   | "creatorNotes"
   | "avatarDataUrl"
+  | "embeddedRendererEnabled"
 >;
 
 export type LorebookRecord = {

@@ -721,6 +721,7 @@ export function useLunemirRuntime() {
           lunemir: {
             ...lunemirExtensions,
             signature: character.signature,
+            embedded_renderer_enabled: character.embeddedRendererEnabled !== false,
             ...(character.avatarDataUrl ? { avatar_data_url: character.avatarDataUrl } : {}),
           },
         },

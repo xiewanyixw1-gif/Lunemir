@@ -138,6 +138,7 @@ export function normalizeCharacterCard(
     avatarDataUrl: avatarDataUrl ?? (embeddedAvatar.startsWith("data:image/") ? embeddedAvatar : undefined),
     lorebookName: lorebook.name,
     lorebookEntries: lorebook.entries,
+    embeddedRendererEnabled: lunemirExtensions.embedded_renderer_enabled !== false,
     extensions,
     raw,
     createdAt: now,

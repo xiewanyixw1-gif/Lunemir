@@ -14,7 +14,7 @@ import type {
   StorySummary,
 } from "./types";
 import { replaceRoleMacros } from "./macros";
-import { normalizeOutputRenderer, presetUsesCustomPresentation } from "./output-renderer";
+import { normalizeOutputRenderer, presetUsesCustomPresentation, resolveOutputRendererConfig } from "./output-renderer";
 
 export type ContextOptions = {
   persona?: PersonaRecord | null;
@@ -157,13 +157,18 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
-  const rendererConfig = normalizeOutputRenderer(preset?.outputRenderer);
-  const presetHasCustomPresentation = Boolean(preset) && presetUsesCustomPresentation(
-    rendererConfig,
-    `${presetPrompt}\n${presetPostHistory}`,
+  const resolvedOutputRenderer = resolveOutputRendererConfig(
+    preset?.outputRenderer,
+    character.extensions,
+    character.embeddedRendererEnabled !== false,
   );
-  const outputProtocol = presetHasCustomPresentation
-    ? `输出呈现规则：当前预设已经定义了自己的 HTML/CSS、状态栏或 UI 模板。严格遵循预设原有格式与字段，不要把它改写成 Lunemir 的 :::status / :::widget，也不要用普通键值卡片代替。可以输出预设要求的 HTML 与 <style>；不要输出 JavaScript、事件处理器、表单或外部网络资源。`
+  const rendererConfig = resolvedOutputRenderer ?? normalizeOutputRenderer(preset?.outputRenderer);
+  const hasCustomPresentation = presetUsesCustomPresentation(
+    rendererConfig,
+    `${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`,
+  );
+  const outputProtocol = hasCustomPresentation
+    ? `输出呈现规则：当前角色卡或预设已经带有专属的状态栏/Regex 后处理器。你只需要输出它要求的动态字段、占位标记和剧情正文；CSS、<style>、完整 HTML 模板与样式说明属于渲染资源，禁止在回复中复述、解释或改写。不要额外输出 Lunemir 的 :::status / :::widget，也不要再生成第二套状态栏。正文必须保持正常段落结构，并放在专属模板规定的正文区域。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
     : preset?.outputRenderer?.enabled && rendererConfig.widgets
       ? `Lunemir 原生组件回退协议：只有当当前预设明确要求状态栏或小组件、但没有规定自己的输出模板时，才使用下面的纯文本格式：
 :::status 状态栏标题
@@ -171,7 +176,7 @@ export function compileContext(
 地点：当前地点
 情绪：角色当前情绪
 :::
-其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。预设没有要求组件时，不要额外生成状态栏。`
+其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。角色卡或预设没有要求组件时，不要额外生成状态栏。`
       : "";
   const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");

@@ -348,6 +348,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .preset-library-grid{grid-template-columns:repeat(auto-fit,minmax(310px,1fr));margin-bottom:2px}.preset-library-card{position:relative}.preset-current-card{grid-column:1/-1}.preset-card-controls{display:flex!important;align-items:center;justify-content:flex-end;gap:6px}.preset-card-controls>.library-action-menu>summary{background:rgba(255,255,255,.025)}
 
 /* Editor actions remain visible on long character cards, lorebooks and presets. */
+.character-renderer-toggle{display:flex;align-items:flex-start;gap:11px;padding:13px 15px;border:1px solid rgba(var(--accent-rgb),.22);border-radius:15px;background:rgba(var(--accent-rgb),.055);cursor:pointer}.character-renderer-toggle>input{margin-top:2px;accent-color:rgb(var(--accent-rgb))}.character-renderer-toggle>span{min-width:0;display:grid;gap:4px}.character-renderer-toggle strong{color:#d4cdea;font-size:10px;font-weight:500}.character-renderer-toggle small{color:#8e879f;font-size:8px;line-height:1.6}
 .character-editor-actions{position:sticky;z-index:12;bottom:-30px;margin:0 -30px -30px;padding:14px 30px calc(14px + env(safe-area-inset-bottom));background:rgba(14,12,30,.94);box-shadow:0 -16px 32px rgba(3,2,12,.2);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px)}
 
 @media (max-width:700px){

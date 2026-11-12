@@ -9,6 +9,7 @@ v0.2 支持：
 - Character Card V3 JSON 与 PNG `ccv3` tEXt 数据块；
 - 同一 PNG 同时包含 `ccv3` 和 `chara` 时优先读取 `ccv3`；
 - 角色卡内嵌 `character_book`、备用开场白、扩展字段和 PNG 头像；
+- 识别角色卡扩展中的 `regex_scripts` / `regexScripts` AI 输出规则，并允许逐角色关闭自带状态栏与美化；
 - 开场白除标准 `first_mes` 外，也兼容常见的 `first_message`、`firstMessage`、`greeting` 与 `greetings` 字段；
 - 导入前预览、格式提示与 20 MB 文件上限。
 - 支持在角色页新建、编辑、复制和删除角色，并导出 Character Card V2 JSON；
@@ -41,7 +42,9 @@ v0.2 支持：
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天或生图、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可手动填写模型 ID 后发起生成。
 
-角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。预设自带的 `<style>`、class 与状态栏 UI 会进入单条消息的 Shadow DOM 隔离层，CSS 不会影响 Lunemir 外壳；脚本、表单、媒体、外链资源、事件属性、远程 URL 与可能覆盖页面的固定定位不会执行。
+角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。角色卡或预设自带的 `<style>`、class 与状态栏 UI 会进入单条消息的 Shadow DOM 隔离层，CSS 不会影响 Lunemir 外壳；角色卡规则优先于预设，检测到专属模板后不会再显示 Lunemir 原生状态栏。脚本、表单、媒体、外链资源、事件属性、远程 URL 与可能覆盖页面的固定定位不会执行。
+
+如果模型误把角色卡附带的大段 CSS 当作回复正文，显示层只会剥离明确识别出的完整样式源码；正常小说段落、空行、对话和 `<content>` 正文区域仍按原顺序保留。消息原文不会被改写，仍可通过“查看原文”检查。
 
 混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。依赖 JavaScript 的 HTML 不会执行，常见“正在渲染…”占位文字会隐藏并尽量展示剩余静态内容。
 
