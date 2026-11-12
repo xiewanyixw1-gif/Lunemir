@@ -138,6 +138,7 @@ export type OutputRegexRule = {
 export type OutputRendererConfig = {
   enabled: boolean;
   markdown: boolean;
+  isolatedHtml: boolean;
   theater: boolean;
   widgets: boolean;
   theaterTheme: "glass" | "minimal" | "paper";

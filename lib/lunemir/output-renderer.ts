@@ -9,6 +9,7 @@ const MAX_OUTPUT_LENGTH = 200_000;
 export const DEFAULT_OUTPUT_RENDERER: OutputRendererConfig = {
   enabled: true,
   markdown: true,
+  isolatedHtml: true,
   theater: true,
   widgets: true,
   theaterTheme: "glass",
@@ -51,6 +52,7 @@ export function normalizeOutputRenderer(config?: Partial<OutputRendererConfig> |
   return {
     enabled: config?.enabled ?? DEFAULT_OUTPUT_RENDERER.enabled,
     markdown: config?.markdown ?? DEFAULT_OUTPUT_RENDERER.markdown,
+    isolatedHtml: config?.isolatedHtml ?? DEFAULT_OUTPUT_RENDERER.isolatedHtml,
     theater: config?.theater ?? DEFAULT_OUTPUT_RENDERER.theater,
     widgets: config?.widgets ?? DEFAULT_OUTPUT_RENDERER.widgets,
     theaterTheme: ["glass", "minimal", "paper"].includes(config?.theaterTheme ?? "")
@@ -92,6 +94,7 @@ export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
     return normalizeOutputRenderer({
       enabled: native.enabled !== false,
       markdown: native.markdown !== false,
+      isolatedHtml: native.isolatedHtml !== false,
       theater: native.theater !== false,
       widgets: native.widgets !== false,
       theaterTheme: asString(native.theaterTheme) as OutputRendererConfig["theaterTheme"],
@@ -162,17 +165,30 @@ function normalizeBracketWidgets(value: string) {
   });
 }
 
-function normalizeSafeHtml(value: string) {
-  const output = normalizeBracketWidgets(value)
+function normalizeSafeHtml(value: string, preservePresetComponents = false) {
+  let output = normalizeBracketWidgets(value)
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<(script|style|iframe|object|embed|svg|math)\b[^>]*\/?\s*>/gi, "")
+    .replace(/<(script|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(script|iframe|object|embed|svg|math|link|meta)\b[^>]*\/?\s*>/gi, "")
     .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "<details open><summary>$1</summary>$2</details>")
     .replace(/<lunemir-status\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-status\s*>/gi, "\n:::status $1\n$2\n:::\n")
-    .replace(/<lunemir-widget\b[^>]*?(?:type=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-widget\s*>/gi, "\n:::widget $1\n$2\n:::\n")
-    .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
-    .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
+    .replace(/<lunemir-widget\b[^>]*?(?:type=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-widget\s*>/gi, "\n:::widget $1\n$2\n:::\n");
+  if (!preservePresetComponents) {
+    output = output
+      .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
+      .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
+  }
   return decodeSafeEntities(output).replace(/\n{4,}/g, "\n\n\n").trim();
+}
+
+export function presetUsesCustomPresentation(config: OutputRendererConfig, promptText = "") {
+  if (!config.enabled || !config.isolatedHtml) return false;
+  const rendererText = config.regexRules
+    .filter((rule) => rule.enabled)
+    .map((rule) => rule.replacement)
+    .join("\n");
+  return /<(?:!doctype|style|div|section|article|header|footer|table|details|progress|meter|status(?:block|-bar)?|character-status|widget(?:block|-block)?)\b|\bclass\s*=|\bid\s*=|\[(?:ui_panel|status_panel|statusbar)\]/i
+    .test(`${promptText}\n${rendererText}`);
 }
 
 export type OutputTransformResult = {
@@ -204,6 +220,12 @@ export function transformOutputContent(
     }
   }
 
-  if (config.markdown) content = normalizeSafeHtml(content);
+  if (config.markdown) {
+    const preservePresetComponents = config.isolatedHtml && (
+      presetUsesCustomPresentation(config)
+      || /<style\b|\bclass\s*=|\bid\s*=/i.test(content)
+    );
+    content = normalizeSafeHtml(content, preservePresetComponents);
+  }
   return { content, changed: content !== source, warnings };
 }

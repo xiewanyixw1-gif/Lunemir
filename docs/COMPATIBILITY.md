@@ -41,7 +41,7 @@ v0.2 支持：
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天或生图、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可手动填写模型 ID 后发起生成。
 
-角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。脚本、表单、媒体、外链资源、事件属性及可能覆盖页面的布局样式不会执行。
+角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。预设自带的 `<style>`、class 与状态栏 UI 会进入单条消息的 Shadow DOM 隔离层，CSS 不会影响 Lunemir 外壳；脚本、表单、媒体、外链资源、事件属性、远程 URL 与可能覆盖页面的固定定位不会执行。
 
 混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。依赖 JavaScript 的 HTML 不会执行，常见“正在渲染…”占位文字会隐藏并尽量展示剩余静态内容。
 
@@ -60,10 +60,11 @@ v0.2 支持：
 - 提示词模块可单独启停、排序，并配置系统提示或历史后置位置与优先级；
 - Lunemir 导出使用 `lunemir_position` 保存模块插入位置，其他应用可以安全忽略该扩展字段；
 - 识别常见 `regex_scripts` / `regexScripts` 数组中的 AI 输出替换规则，并保留规则开关；
-- Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、小剧场主题、原生组件和 Regex 配置；
+- Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、HTML/CSS 隔离开关、小剧场主题、原生组件和 Regex 配置；
+- 当预设提示词或 Regex replacement 已定义 HTML/CSS、状态栏或 UI 模板时，模型上下文与显示层都会优先遵守该格式；
 - 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 
-复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件和受约束 Regex，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex 和消息级隔离 CSS，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 
 ## 本地数据
 

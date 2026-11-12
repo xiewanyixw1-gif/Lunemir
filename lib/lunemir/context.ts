@@ -14,6 +14,7 @@ import type {
   StorySummary,
 } from "./types";
 import { replaceRoleMacros } from "./macros";
+import { normalizeOutputRenderer, presetUsesCustomPresentation } from "./output-renderer";
 
 export type ContextOptions = {
   persona?: PersonaRecord | null;
@@ -156,15 +157,22 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
-  const outputProtocol = preset?.outputRenderer?.enabled && preset.outputRenderer.widgets
-    ? `Lunemir 原生组件协议：仅当当前预设本来要求输出状态栏或小组件时，使用下面的纯文本格式，不要输出 HTML、CSS 或 JavaScript：
+  const rendererConfig = normalizeOutputRenderer(preset?.outputRenderer);
+  const presetHasCustomPresentation = Boolean(preset) && presetUsesCustomPresentation(
+    rendererConfig,
+    `${presetPrompt}\n${presetPostHistory}`,
+  );
+  const outputProtocol = presetHasCustomPresentation
+    ? `输出呈现规则：当前预设已经定义了自己的 HTML/CSS、状态栏或 UI 模板。严格遵循预设原有格式与字段，不要把它改写成 Lunemir 的 :::status / :::widget，也不要用普通键值卡片代替。可以输出预设要求的 HTML 与 <style>；不要输出 JavaScript、事件处理器、表单或外部网络资源。`
+    : preset?.outputRenderer?.enabled && rendererConfig.widgets
+      ? `Lunemir 原生组件回退协议：只有当当前预设明确要求状态栏或小组件、但没有规定自己的输出模板时，才使用下面的纯文本格式：
 :::status 状态栏标题
 时间：当前剧情时间
 地点：当前地点
 情绪：角色当前情绪
 :::
-其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。`
-    : "";
+其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。预设没有要求组件时，不要额外生成状态栏。`
+      : "";
   const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
   const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";

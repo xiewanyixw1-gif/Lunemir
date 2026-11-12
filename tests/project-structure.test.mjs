@@ -312,21 +312,26 @@ test("supports alternate opening selection and an immersive compact chat", async
   assert.match(styles, /data-glass-mode="messages"/);
 });
 
-test("renders preset theater output without executing imported markup", async () => {
-  const [renderer, component, editor, runtime, importer, prototype] = await Promise.all([
+test("renders preset HTML and CSS in an isolated layer without executing imported code", async () => {
+  const [renderer, component, editor, runtime, importer, prototype, context] = await Promise.all([
     readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
     readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
     readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
     readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
     readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
   ]);
   assert.match(renderer, /normalizeImportedOutputRenderer/);
   assert.match(renderer, /likelyUnsafeRegex/);
-  assert.match(renderer, /script\|style\|iframe\|object\|embed/);
+  assert.match(renderer, /script\|iframe\|object\|embed/);
+  assert.match(renderer, /presetUsesCustomPresentation/);
   assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
   assert.match(component, /SAFE_HTML_TAGS/);
   assert.match(component, /new DOMParser/);
+  assert.match(component, /attachShadow/);
+  assert.match(component, /sanitizePresetCss/);
+  assert.match(component, /replace\(\/url/);
   assert.match(component, /safeHref/);
   assert.match(component, /theater-card/);
   assert.match(component, /native-widget/);
@@ -336,6 +341,7 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(renderer, /:::status/);
   assert.match(renderer, /UI_PANEL/);
   assert.match(editor, /小剧场与输出美化/);
+  assert.match(editor, /隔离渲染预设 HTML\/CSS/);
   assert.match(editor, /识别状态栏与原生组件/);
   assert.match(editor, /Regex 美化规则/);
   assert.match(runtime, /lunemir_output_renderer/);
@@ -343,6 +349,8 @@ test("renders preset theater output without executing imported markup", async ()
   assert.match(prototype, /查看原文/);
   assert.match(prototype, /达到输出上限/);
   assert.match(runtime, /finishReason/);
+  assert.match(context, /预设已经定义了自己的 HTML\/CSS/);
+  assert.match(context, /原生组件回退协议/);
 });
 
 test("keeps personas, story archives, and model settings useful on small screens", async () => {

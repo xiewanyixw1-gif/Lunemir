@@ -1,6 +1,6 @@
 "use client";
 
-import { createElement, Fragment, useEffect, useMemo, useState } from "react";
+import { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { normalizeOutputRenderer, transformOutputContent } from "../../lib/lunemir/output-renderer";
 import type { OutputRendererConfig } from "../../lib/lunemir/types";
@@ -19,7 +19,7 @@ type TheaterSection = {
 };
 
 const SAFE_HTML_TAGS = new Set([
-  "a", "b", "blockquote", "br", "code", "del", "details", "div", "em", "h1", "h2", "h3", "h4", "hr", "i", "li", "mark", "ol", "p", "pre", "rp", "rt", "ruby", "s", "small", "span", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "u", "ul",
+  "a", "article", "b", "blockquote", "br", "character-status", "code", "dd", "del", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "header", "hr", "i", "img", "li", "main", "mark", "meter", "ol", "p", "pre", "progress", "rp", "rt", "ruby", "s", "section", "small", "span", "status", "status-bar", "statusblock", "story-widget", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "widget", "widget-block", "widgetblock",
 ]);
 const BLOCKED_HTML_TAGS = new Set(["script", "style", "iframe", "object", "embed", "svg", "math", "form", "input", "button", "textarea", "select", "video", "audio", "source", "link", "meta"]);
 const SAFE_STYLE_PROPERTIES = new Map<string, keyof CSSProperties>([
@@ -123,11 +123,129 @@ function SafeHtmlContent({ content }: { content: string }) {
   return <div className="safe-html-content">{nodes ?? content.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim()}</div>;
 }
 
-function RichBlocks({ content }: { content: string }) {
+const PRESET_STYLE_LIMIT = 60_000;
+const PRESET_ATTRIBUTE_LIMIT = 500;
+
+export function sanitizePresetCss(value: string) {
+  return value
+    .slice(0, PRESET_STYLE_LIMIT)
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/@(?:import|charset|namespace)\b[^;]*;?/gi, "")
+    .replace(/@font-face\s*\{[\s\S]*?\}/gi, "")
+    .replace(/(?:-webkit-)?image-set\s*\([^)]*\)/gi, "none")
+    .replace(/url\s*\(\s*(["']?)([^)'"]+)\1\s*\)/gi, (_match, _quote: string, asset: string) => {
+      const normalized = asset.trim();
+      return /^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z\d+/=\s]+$/i.test(normalized) ? `url("${normalized}")` : "none";
+    })
+    .replace(/(?:expression|javascript|vbscript)\s*[:(][^;}\n]*/gi, "")
+    .replace(/(?:behavior|-moz-binding)\s*:[^;}\n]*/gi, "")
+    .replace(/:host(?:\([^)]*\))?/gi, ".lm-preset-root")
+    .replace(/::slotted(?:\([^)]*\))?/gi, "")
+    .replace(/(^|[},]\s*)(?:html|body|:root)(?=\s*(?:[,>{.#:[+~]|$))/gim, "$1.lm-preset-root")
+    .replace(/\bposition\s*:\s*(?:fixed|sticky)\b/gi, "position: relative");
+}
+
+function sanitizeClassNames(value: string) {
+  return value.split(/\s+/).filter((item) => /^[a-z_][\w-]{0,63}$/i.test(item)).slice(0, 24).join(" ");
+}
+
+function appendSanitizedPresetNode(parent: Node, node: Node, ownerDocument: Document) {
+  if (node.nodeType === Node.TEXT_NODE) {
+    parent.appendChild(ownerDocument.createTextNode((node.textContent ?? "").slice(0, 100_000)));
+    return;
+  }
+  if (node.nodeType !== Node.ELEMENT_NODE) return;
+  const source = node as Element;
+  const tag = source.tagName.toLocaleLowerCase();
+  if (tag === "style" || BLOCKED_HTML_TAGS.has(tag)) return;
+  const safeCustomElement = /^[a-z][a-z\d]*-[a-z\d-]+$/.test(tag);
+  if (!SAFE_HTML_TAGS.has(tag) && !safeCustomElement) {
+    [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument));
+    return;
+  }
+
+  const target = ownerDocument.createElement(tag);
+  const className = sanitizeClassNames(source.getAttribute("class") ?? "");
+  if (className) target.setAttribute("class", className);
+  const id = source.getAttribute("id") ?? "";
+  if (/^[a-z_][\w-]{0,63}$/i.test(id)) target.id = id;
+  const inlineStyle = source.getAttribute("style");
+  if (inlineStyle) target.setAttribute("style", sanitizePresetCss(inlineStyle).replace(/[{}]/g, "").slice(0, 2_000));
+
+  [...source.attributes].forEach((attribute) => {
+    const name = attribute.name.toLocaleLowerCase();
+    const value = attribute.value.slice(0, PRESET_ATTRIBUTE_LIMIT);
+    if (/^aria-[\w-]+$/.test(name) || /^data-[\w-]+$/.test(name)) target.setAttribute(name, value);
+    if (name === "title" || (name === "role" && /^[a-z][\w-]*$/i.test(value))) target.setAttribute(name, value);
+  });
+  if (tag === "a") {
+    const href = source.getAttribute("href") ?? "";
+    if (/^#[\w-]+$/.test(href)) target.setAttribute("href", href);
+  }
+  if (tag === "img") {
+    const sourceUrl = source.getAttribute("src") ?? "";
+    if (/^data:image\/(?:png|jpe?g|webp|gif);base64,[a-z\d+/=\s]+$/i.test(sourceUrl)) target.setAttribute("src", sourceUrl);
+    const alt = source.getAttribute("alt");
+    if (alt) target.setAttribute("alt", alt.slice(0, 200));
+    target.setAttribute("loading", "lazy");
+  }
+  if (tag === "details" && source.hasAttribute("open")) target.setAttribute("open", "");
+  if (tag === "td" || tag === "th") {
+    ["colspan", "rowspan"].forEach((name) => {
+      const amount = Number(source.getAttribute(name));
+      if (Number.isInteger(amount) && amount > 1 && amount <= 12) target.setAttribute(name, String(amount));
+    });
+  }
+  if (tag === "progress" || tag === "meter") {
+    ["min", "max", "value", "low", "high", "optimum"].forEach((name) => {
+      const amount = Number(source.getAttribute(name));
+      if (Number.isFinite(amount)) target.setAttribute(name, String(amount));
+    });
+  }
+  if (tag === "time") {
+    const dateTime = source.getAttribute("datetime");
+    if (dateTime) target.setAttribute("datetime", dateTime.slice(0, 80));
+  }
+  [...source.childNodes].forEach((child) => appendSanitizedPresetNode(target, child, ownerDocument));
+  parent.appendChild(target);
+}
+
+function IsolatedPresetHtml({ content }: { content: string }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const shadow = host.shadowRoot ?? host.attachShadow({ mode: "open" });
+    shadow.replaceChildren();
+    const parsed = new DOMParser().parseFromString(content, "text/html");
+    const style = document.createElement("style");
+    const importedCss = [...parsed.querySelectorAll("style")].map((item) => item.textContent ?? "").join("\n");
+    style.textContent = `
+      :host{display:block;width:100%;min-width:0;color:inherit;font:inherit}
+      .lm-preset-root{position:relative;display:block;max-width:100%;overflow:hidden;contain:layout paint style;isolation:isolate;color:inherit;font:inherit;line-height:inherit}
+      .lm-preset-root,.lm-preset-root *,.lm-preset-root *::before,.lm-preset-root *::after{box-sizing:border-box;max-width:100%}
+      .lm-preset-root table{width:100%;border-collapse:collapse}
+      .lm-preset-root pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+      .lm-preset-root a{color:inherit}
+      ${sanitizePresetCss(importedCss)}
+    `;
+    const root = document.createElement("div");
+    root.className = "lm-preset-root";
+    [...parsed.body.childNodes].forEach((node) => appendSanitizedPresetNode(root, node, document));
+    shadow.append(style, root);
+  }, [content]);
+  return <div className="preset-html-sandbox" ref={hostRef} data-render-mode="isolated-preset" />;
+}
+
+function RichBlocks({ content, isolatedHtml = true }: { content: string; isolatedHtml?: boolean }) {
   const trimmed = content.trim();
-  const rawHtmlDocument = !trimmed.includes("```")
-    && /^(?:<!doctype\s+html[^>]*>\s*)?<(?:article|aside|blockquote|details|div|h[1-4]|ol|p|pre|section|table|ul)\b/i.test(trimmed);
-  return rawHtmlDocument ? <SafeHtmlContent content={content} /> : <MarkdownBlocks content={content} />;
+  const hasHtml = /<\/?[a-z][\s\S]*?>/i.test(trimmed);
+  const rawHtmlDocument = hasHtml
+    && !trimmed.includes("```")
+    && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|details|div|h[1-4]|main|ol|p|pre|section|table|ul)\b/i.test(trimmed)
+      || /<style\b/i.test(trimmed));
+  if (!rawHtmlDocument) return <MarkdownBlocks content={content} />;
+  return isolatedHtml ? <IsolatedPresetHtml content={content} /> : <SafeHtmlContent content={content} />;
 }
 
 type WidgetRow = { label: string; value: string };
@@ -369,12 +487,12 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
       {sections.map((section, index) => section.type === "theater" ? (
         <details className={`theater-card theater-card--${resolvedConfig.theaterTheme}`} open key={`theater-${index}-${section.title}`}>
           <summary><span>✦</span>{section.title}</summary>
-          <div className="theater-card-body"><RichBlocks content={section.content} /></div>
+          <div className="theater-card-body"><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} /></div>
         </details>
       ) : section.type === "status" || section.type === "widget" ? (
         <NativeWidget section={section} key={`${section.type}-${index}-${section.title}`} />
       ) : (
-        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} /></div>
+        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} /></div>
       ))}
       {showWarnings && result.warnings.length > 0 ? <div className="renderer-warnings" role="status">{result.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div> : null}
     </div>
