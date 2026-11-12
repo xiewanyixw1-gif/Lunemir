@@ -339,7 +339,9 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(component, /native-widget/);
   assert.match(component, /safe-html-fence/);
   assert.match(component, /knownLabels/);
-  assert.match(component, /正在渲染/);
+  assert.match(component, /isInertLoadingPlaceholder/);
+  assert.match(component, /正在\|正为你/);
+  assert.match(component, /rendering\|loading\|generating/);
   assert.match(renderer, /:::status/);
   assert.match(renderer, /UI_PANEL/);
   assert.match(editor, /小剧场与输出美化/);

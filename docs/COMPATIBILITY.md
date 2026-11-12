@@ -46,7 +46,7 @@ v0.2 支持：
 
 如果模型误把角色卡附带的大段 CSS 当作回复正文，显示层只会剥离明确识别出的完整样式源码；正常小说段落、空行、对话和 `<content>` 正文区域仍按原顺序保留。消息原文不会被改写，仍可通过“查看原文”检查。
 
-混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。带 Regex replacement 的预设只要求模型返回动态字段，由 replacement 负责生成外壳；只有提示词模板、没有可复用 Regex 的预设则允许模型按模板返回一次完整 HTML/CSS。依赖 JavaScript 的 HTML 不会执行，常见“正在渲染…”占位文字会隐藏并尽量展示剩余静态内容。
+混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。带 Regex replacement 的预设只要求模型返回动态字段，由 replacement 负责生成外壳；只有提示词模板、没有可复用 Regex 的预设则允许模型按模板返回一次完整 HTML/CSS。依赖 JavaScript 的 HTML 不会执行；只包含“正在渲染回忆/加载组件”等文案的节点会连同空卡片一起隐藏，静态正文和已经生成的状态内容保持原顺序。
 
 ## 独立世界书与预设
 

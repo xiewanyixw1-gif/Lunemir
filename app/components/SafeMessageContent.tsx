@@ -76,13 +76,19 @@ function safeHref(value: string | null) {
   return "";
 }
 
+function isInertLoadingPlaceholder(value: string | null | undefined) {
+  const text = (value ?? "").replace(/\s+/g, " ").trim();
+  if (!text || text.length > 48) return false;
+  return /^(?:(?:正在|正为你)(?:渲染|加载|读取|生成|整理)(?:回忆|记忆|内容|组件|状态|面板|数据)?(?:中)?|(?:rendering|loading|generating)(?:\s+(?:memories|memory|content|widget|status|data))?)[\s.…·!！]*$/i.test(text);
+}
+
 function htmlNodeToReact(node: ChildNode, path: string): ReactNode {
   if (node.nodeType === 3) return node.textContent;
   if (node.nodeType !== 1) return null;
   const element = node as Element;
   const tag = element.tagName.toLocaleLowerCase();
   if (BLOCKED_HTML_TAGS.has(tag)) return null;
-  if (element.children.length === 0 && /^\s*正在渲染(?:回忆|内容|组件)?[.…·]*\s*$/i.test(element.textContent ?? "")) return null;
+  if (isInertLoadingPlaceholder(element.textContent)) return null;
   const children = [...element.childNodes].map((child, index) => htmlNodeToReact(child, `${path}-${index}`));
   if (!SAFE_HTML_TAGS.has(tag)) return <Fragment key={path}>{children}</Fragment>;
   const props: Record<string, unknown> = { key: path };
@@ -158,6 +164,10 @@ function appendSanitizedPresetNode(parent: Node, node: Node, ownerDocument: Docu
   const source = node as Element;
   const tag = source.tagName.toLocaleLowerCase();
   if (tag === "style" || BLOCKED_HTML_TAGS.has(tag)) return;
+  // Tavern widgets can leave a loading card that their JavaScript would
+  // replace. Scripts stay disabled, so remove the complete inert card,
+  // including variants whose text is wrapped in nested spans.
+  if (isInertLoadingPlaceholder(source.textContent)) return;
   const safeCustomElement = /^[a-z][a-z\d]*-[a-z\d-]+$/.test(tag);
   if (!SAFE_HTML_TAGS.has(tag) && !safeCustomElement) {
     [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument));

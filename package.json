@@ -1,6 +1,6 @@
 {
   "name": "lunemir",
-  "version": "0.31.2",
+  "version": "0.31.3",
   "private": true,
   "description": "A local-first immersive AI character roleplay workspace.",
   "engines": {
