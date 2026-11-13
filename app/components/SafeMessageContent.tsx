@@ -3,6 +3,7 @@
 import { createElement, Fragment, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { normalizeOutputRenderer, transformOutputContent } from "../../lib/lunemir/output-renderer";
+import { buildPresetSandboxDocument, hasInteractivePresetMarkup } from "../../lib/lunemir/preset-sandbox.mjs";
 import type { OutputRendererConfig } from "../../lib/lunemir/types";
 
 type Props = {
@@ -10,6 +11,8 @@ type Props = {
   config?: OutputRendererConfig;
   rawMode?: boolean;
   showWarnings?: boolean;
+  depth?: number;
+  onPresetAction?: (text: string) => void;
 };
 
 type TheaterSection = {
@@ -19,11 +22,6 @@ type TheaterSection = {
 };
 
 type WidgetRow = { label: string; value: string };
-
-type MessageStatusPayload = {
-  title: string;
-  rows: WidgetRow[];
-};
 
 const SAFE_HTML_TAGS = new Set([
   "a", "article", "b", "blockquote", "br", "character-status", "code", "content", "dd", "del", "details", "div", "dl", "dt", "em", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "header", "hr", "i", "img", "li", "main", "mark", "meter", "ol", "p", "pre", "progress", "rp", "rt", "ruby", "s", "section", "small", "span", "status", "status-bar", "statusbar", "statusblock", "story-widget", "strong", "sub", "summary", "sup", "table", "tbody", "td", "tfoot", "th", "thead", "time", "tr", "u", "ul", "widget", "widget-block", "widgetblock",
@@ -162,40 +160,10 @@ function sanitizeClassNames(value: string) {
   return value.split(/\s+/).filter((item) => /^[a-z_][\w-]{0,63}$/i.test(item)).slice(0, 24).join(" ");
 }
 
-type PresetStatusHydration = { injected: boolean };
-
-function appendStatusText(ownerDocument: Document, parent: Element, tag: string, className: string, value: string) {
-  const element = ownerDocument.createElement(tag);
-  element.className = className;
-  element.textContent = value;
-  parent.appendChild(element);
-}
-
-function createMessageStatusPanel(ownerDocument: Document, status: MessageStatusPayload) {
-  const panel = ownerDocument.createElement("section");
-  panel.className = "lm-message-status";
-  panel.setAttribute("data-lunemir-status-compat", "message");
-  const header = ownerDocument.createElement("header");
-  appendStatusText(ownerDocument, header, "span", "lm-message-status-kicker", "STATUS");
-  appendStatusText(ownerDocument, header, "strong", "lm-message-status-title", status.title);
-  panel.appendChild(header);
-  const list = ownerDocument.createElement("dl");
-  status.rows.slice(0, 16).forEach((row) => {
-    const item = ownerDocument.createElement("div");
-    appendStatusText(ownerDocument, item, "dt", "", row.label);
-    appendStatusText(ownerDocument, item, "dd", "", row.value);
-    list.appendChild(item);
-  });
-  panel.appendChild(list);
-  return panel;
-}
-
 function appendSanitizedPresetNode(
   parent: Node,
   node: Node,
   ownerDocument: Document,
-  messageStatus?: MessageStatusPayload | null,
-  hydration: PresetStatusHydration = { injected: false },
 ) {
   if (node.nodeType === Node.TEXT_NODE) {
     parent.appendChild(ownerDocument.createTextNode((node.textContent ?? "").slice(0, 100_000)));
@@ -205,19 +173,14 @@ function appendSanitizedPresetNode(
   const source = node as Element;
   const tag = source.tagName.toLocaleLowerCase();
   if (tag === "style" || BLOCKED_HTML_TAGS.has(tag)) return;
-  // Tavern widgets can leave a loading card that their JavaScript would
-  // replace. Scripts stay disabled, so remove the complete inert card,
-  // including variants whose text is wrapped in nested spans.
+  // A custom renderer owns its layout. Remove an inert loader, but never
+  // replace it with Lunemir's generic status card or absorb nearby prose.
   if (isInertLoadingPlaceholder(source.textContent)) {
-    if (messageStatus && !hydration.injected) {
-      parent.appendChild(createMessageStatusPanel(ownerDocument, messageStatus));
-      hydration.injected = true;
-    }
     return;
   }
   const safeCustomElement = /^[a-z][a-z\d]*-[a-z\d-]+$/.test(tag);
   if (!SAFE_HTML_TAGS.has(tag) && !safeCustomElement) {
-    [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument, messageStatus, hydration));
+    [...source.childNodes].forEach((child) => appendSanitizedPresetNode(parent, child, ownerDocument));
     return;
   }
 
@@ -263,65 +226,68 @@ function appendSanitizedPresetNode(
     const dateTime = source.getAttribute("datetime");
     if (dateTime) target.setAttribute("datetime", dateTime.slice(0, 80));
   }
-  [...source.childNodes].forEach((child) => appendSanitizedPresetNode(target, child, ownerDocument, messageStatus, hydration));
+  [...source.childNodes].forEach((child) => appendSanitizedPresetNode(target, child, ownerDocument));
   parent.appendChild(target);
 }
 
-function SandboxedPresetHtml({ content }: { content: string }) {
+function SandboxedPresetHtml({ content, onAction }: { content: string; onAction?: (text: string) => void }) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [height, setHeight] = useState(180);
-  const sourceDocument = useMemo(() => `<!doctype html>
-<html><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob: https:; media-src data: blob: https:; font-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none';">
-<style>html,body{margin:0;min-width:0;background:transparent;color:inherit;overflow:hidden}*{box-sizing:border-box;max-width:100%}body{font-family:Inter,'Noto Sans SC',system-ui,sans-serif}</style>
-</head><body>
-${content}
-<script>
-(() => {
-  const sendSize = () => {
-    const root = document.documentElement;
-    const body = document.body;
-    const height = Math.max(root.scrollHeight, root.offsetHeight, body ? body.scrollHeight : 0, body ? body.offsetHeight : 0);
-    parent.postMessage({ type: 'lunemir-preset-height', height }, '*');
-  };
-  addEventListener('load', sendSize);
-  addEventListener('resize', sendSize);
-  document.addEventListener('click', () => setTimeout(sendSize, 0), true);
-  new MutationObserver(sendSize).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
-  if ('ResizeObserver' in window) new ResizeObserver(sendSize).observe(document.documentElement);
-  requestAnimationFrame(sendSize);
-  setTimeout(sendSize, 80);
-})();
-</script>
-</body></html>`, [content]);
+  const actionRef = useRef(onAction);
+  const [frameState, setFrameState] = useState({ source: content, height: 180, runtimeError: "" });
+  const sourceDocument = useMemo(() => buildPresetSandboxDocument(content), [content]);
+  const currentFrameState = frameState.source === content
+    ? frameState
+    : { source: content, height: 180, runtimeError: "" };
 
   useEffect(() => {
-    function receiveSize(event: MessageEvent) {
+    actionRef.current = onAction;
+  }, [onAction]);
+
+  useEffect(() => {
+    function receiveSandboxEvent(event: MessageEvent) {
       if (event.source !== iframeRef.current?.contentWindow) return;
-      const data = event.data as { type?: unknown; height?: unknown } | null;
-      if (!data || data.type !== "lunemir-preset-height" || typeof data.height !== "number") return;
-      setHeight(Math.min(6_000, Math.max(80, Math.ceil(data.height))));
+      const data = event.data as { type?: unknown; height?: unknown; message?: unknown; text?: unknown } | null;
+      if (!data) return;
+      if (data.type === "lunemir-preset-height" && typeof data.height === "number") {
+        setFrameState((current) => ({
+          source: content,
+          height: Math.min(6_000, Math.max(80, Math.ceil(data.height as number))),
+          runtimeError: current.source === content ? current.runtimeError : "",
+        }));
+      }
+      if (data.type === "lunemir-preset-error" && typeof data.message === "string") {
+        setFrameState((current) => ({
+          source: content,
+          height: current.source === content ? current.height : 180,
+          runtimeError: (data.message as string).slice(0, 240),
+        }));
+      }
+      if (data.type === "lunemir-preset-action" && typeof data.text === "string") {
+        const text = data.text.trim().slice(0, 4_000);
+        if (text) actionRef.current?.(text);
+      }
     }
-    window.addEventListener("message", receiveSize);
-    return () => window.removeEventListener("message", receiveSize);
-  }, []);
+    window.addEventListener("message", receiveSandboxEvent);
+    return () => window.removeEventListener("message", receiveSandboxEvent);
+  }, [content]);
 
   return (
-    <iframe
-      className="preset-html-frame"
-      ref={iframeRef}
-      sandbox="allow-scripts"
-      referrerPolicy="no-referrer"
-      title="交互式剧情组件"
-      srcDoc={sourceDocument}
-      style={{ height }}
-    />
+    <div className="preset-html-interactive">
+      <iframe
+        className="preset-html-frame"
+        ref={iframeRef}
+        sandbox="allow-scripts"
+        referrerPolicy="no-referrer"
+        title="交互式剧情组件"
+        srcDoc={sourceDocument}
+        style={{ height: currentFrameState.height }}
+      />
+      {currentFrameState.runtimeError ? <details className="preset-runtime-warning"><summary>组件交互未完全运行</summary><p>{currentFrameState.runtimeError}</p></details> : null}
+    </div>
   );
 }
 
-function StaticIsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
+function StaticIsolatedPresetHtml({ content }: { content: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -340,41 +306,32 @@ function StaticIsolatedPresetHtml({ content, statusSource = content }: { content
       .lm-preset-root table{width:100%;border-collapse:collapse}
       .lm-preset-root pre{overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
       .lm-preset-root a{color:inherit}
-      .lm-message-status{display:grid;gap:10px;width:100%;margin:8px 0;border:1px solid rgba(171,144,255,.26);border-radius:16px;padding:13px;background:linear-gradient(145deg,rgba(39,31,70,.78),rgba(12,10,31,.74));box-shadow:0 14px 34px rgba(0,0,0,.2);color:#f1edf8;font-family:Inter,"Noto Sans SC",sans-serif;text-shadow:none}
-      .lm-message-status header{display:flex;align-items:center;gap:8px;padding:0 0 9px;border-bottom:1px solid rgba(255,255,255,.08)}
-      .lm-message-status-kicker{border-radius:6px;padding:3px 6px;background:rgba(171,144,255,.14);color:#bba5ff;font-size:9px;font-weight:700;letter-spacing:.14em}
-      .lm-message-status-title{font-size:14px;font-weight:650}
-      .lm-message-status dl{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin:0}.lm-message-status dl div{display:grid;gap:3px;border-radius:10px;padding:8px;background:rgba(255,255,255,.03)}
-      .lm-message-status dt{color:#90899f;font-size:9px}.lm-message-status dd{margin:0;color:#eeeaf7;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
-      @media(max-width:600px){.lm-message-status{border-radius:14px;padding:11px}.lm-message-status dl{grid-template-columns:1fr 1fr}}
       ${sanitizePresetCss(importedCss)}
     `;
     const root = document.createElement("div");
     root.className = "lm-preset-root";
-    const messageStatus = extractMessageStatus(statusSource);
-    const hydration: PresetStatusHydration = { injected: false };
-    [...parsed.body.childNodes].forEach((node) => appendSanitizedPresetNode(root, node, document, messageStatus, hydration));
+    [...parsed.body.childNodes].forEach((node) => appendSanitizedPresetNode(root, node, document));
     shadow.append(style, root);
-  }, [content, statusSource]);
+  }, [content]);
   return <div className="preset-html-sandbox" ref={hostRef} data-render-mode="isolated-preset" />;
 }
 
-function IsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
-  const needsInteractiveSandbox = /<script\b|\son[a-z]+\s*=|\bhref\s*=\s*["']javascript:/i.test(content);
+function IsolatedPresetHtml({ content, onAction }: { content: string; onAction?: (text: string) => void }) {
+  const needsInteractiveSandbox = hasInteractivePresetMarkup(content);
   return needsInteractiveSandbox
-    ? <SandboxedPresetHtml content={content} />
-    : <StaticIsolatedPresetHtml content={content} statusSource={statusSource} />;
+    ? <SandboxedPresetHtml content={content} onAction={onAction} />
+    : <StaticIsolatedPresetHtml content={content} />;
 }
 
-function RichBlocks({ content, isolatedHtml = true, statusSource = content }: { content: string; isolatedHtml?: boolean; statusSource?: string }) {
+function RichBlocks({ content, isolatedHtml = true, onPresetAction }: { content: string; isolatedHtml?: boolean; onPresetAction?: (text: string) => void }) {
   const trimmed = content.trim();
   const hasHtml = /<\/?[a-z][\s\S]*?>/i.test(trimmed);
   const rawHtmlDocument = hasHtml
     && !trimmed.includes("```")
     && (/^(?:<!doctype\s+html[^>]*>\s*)?<(?:style|article|aside|blockquote|content|details|div|h[1-4]|main|ol|p|pre|section|status|statusbar|table|ul|widget)\b/i.test(trimmed)
       || /<style\b/i.test(trimmed));
-  if (!rawHtmlDocument) return <MarkdownBlocks content={content} isolatedHtml={isolatedHtml} statusSource={statusSource} />;
-  return isolatedHtml ? <IsolatedPresetHtml content={content} statusSource={statusSource} /> : <SafeHtmlContent content={content} />;
+  if (!rawHtmlDocument) return <MarkdownBlocks content={content} isolatedHtml={isolatedHtml} onPresetAction={onPresetAction} />;
+  return isolatedHtml ? <IsolatedPresetHtml content={content} onAction={onPresetAction} /> : <SafeHtmlContent content={content} />;
 }
 
 function inlineMarkdown(value: string) {
@@ -401,7 +358,7 @@ function withLineBreaks(value: string) {
   ));
 }
 
-function MarkdownBlocks({ content, isolatedHtml = true, statusSource = content }: { content: string; isolatedHtml?: boolean; statusSource?: string }) {
+function MarkdownBlocks({ content, isolatedHtml = true, onPresetAction }: { content: string; isolatedHtml?: boolean; onPresetAction?: (text: string) => void }) {
   const lines = content.replaceAll("\r\n", "\n").split("\n");
   const nodes: ReactNode[] = [];
   let index = 0;
@@ -425,14 +382,15 @@ function MarkdownBlocks({ content, isolatedHtml = true, statusSource = content }
       }
       if (index < lines.length) index += 1;
       const codeContent = code.join("\n");
-      if (/^html?$/i.test(language)) {
-        const useIsolatedRenderer = isolatedHtml && /<style\b|\bclass\s*=|\bid\s*=/i.test(codeContent);
+      const unlabeledHtml = !language && /^(?:<!doctype\s+html[^>]*>\s*)?<(?:html|head|body|style|script|article|aside|details|div|main|section)\b/i.test(codeContent.trim());
+      if (/^html?$/i.test(language) || unlabeledHtml) {
+        const useIsolatedRenderer = isolatedHtml && (/<style\b|\bclass\s*=|\bid\s*=/i.test(codeContent) || hasInteractivePresetMarkup(codeContent));
         nodes.push(
           <section className="safe-html-fence" key={`html-${index}`}>
             {title ? <header><span>HTML</span><strong>{title}</strong></header> : null}
             {/<\/?[a-z][\s\S]*?>/i.test(codeContent)
-              ? useIsolatedRenderer ? <IsolatedPresetHtml content={codeContent} statusSource={statusSource} /> : <SafeHtmlContent content={codeContent} />
-              : <MarkdownBlocks content={codeContent} isolatedHtml={isolatedHtml} statusSource={statusSource} />}
+              ? useIsolatedRenderer ? <IsolatedPresetHtml content={codeContent} onAction={onPresetAction} /> : <SafeHtmlContent content={codeContent} />
+              : <MarkdownBlocks content={codeContent} isolatedHtml={isolatedHtml} onPresetAction={onPresetAction} />}
           </section>,
         );
       } else {
@@ -611,86 +569,7 @@ function statusRowsFromText(value: string, explicit = false) {
   return rows.length >= (explicit ? 1 : 2) ? rows.slice(0, 10) : [];
 }
 
-function statusValue(value: unknown): string {
-  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return String(value).trim();
-  if (Array.isArray(value)) return value.map((item) => statusValue(item)).filter(Boolean).join("、");
-  return "";
-}
-
-function statusRowsFromJson(value: unknown, depth = 0): WidgetRow[] {
-  if (!value || typeof value !== "object" || depth > 3) return [];
-  const rows: WidgetRow[] = [];
-  Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
-    const parsed = parseWidgetRows(`${key}: ${statusValue(item)}`)[0];
-    const compactValue = parsed ? compactStatusValue(parsed.value) : "";
-    if (parsed && STATUS_LABELS.has(parsed.label) && !STATUS_NARRATIVE_LABELS.has(parsed.label.toLocaleLowerCase()) && compactValue) {
-      rows.push({ label: parsed.label, value: compactValue });
-      return;
-    }
-    if (/^(?:status|state|characterStatus|character_status|statusData|status_data|data|details)$/i.test(key)) {
-      rows.push(...statusRowsFromJson(item, depth + 1));
-    }
-  });
-  return rows.slice(0, 10);
-}
-
-function statusTitle(element?: Element | null) {
-  return element?.getAttribute("data-status-title")?.trim().slice(0, 60)
-    || element?.getAttribute("data-title")?.trim().slice(0, 60)
-    || element?.getAttribute("title")?.trim().slice(0, 60)
-    || "当前状态";
-}
-
-function extractMessageStatus(source: string): MessageStatusPayload | null {
-  if (!source.trim()) return null;
-  const boundedSource = source.slice(0, 200_000);
-  const parsed = new DOMParser().parseFromString(boundedSource, "text/html");
-
-  for (const script of parsed.querySelectorAll('script[type="application/json"], script[type="application/ld+json"]')) {
-    try {
-      const rows = statusRowsFromJson(JSON.parse(script.textContent ?? ""));
-      if (rows.length > 0) return { title: statusTitle(script), rows };
-    } catch {
-      // Malformed JSON remains inert and is never executed.
-    }
-  }
-
-  const dataRows = [...parsed.querySelectorAll("[data-status-label], [data-field], [data-label]")].flatMap((element) => {
-    const label = element.getAttribute("data-status-label") || element.getAttribute("data-field") || element.getAttribute("data-label") || "";
-    const value = element.getAttribute("data-status-value") || element.getAttribute("data-value") || element.textContent || "";
-    return statusRowsFromText(`${label}: ${value}`, true);
-  });
-  if (dataRows.length > 0) return { title: "当前状态", rows: dataRows.slice(0, 16) };
-
-  const explicitSelector = [
-    "status", "status-bar", "statusbar", "statusblock", "status-block", "character-status",
-    "[data-status]", "[data-status-bar]", '[data-widget="status"]', '[data-type="status"]',
-  ].join(",");
-  for (const element of parsed.querySelectorAll(explicitSelector)) {
-    if (isInertLoadingPlaceholder(element.textContent)) continue;
-    const rows = statusRowsFromText(element.textContent ?? "", true);
-    if (rows.length > 0) return { title: statusTitle(element), rows };
-  }
-
-  const markerPatterns = [
-    /\[(?:STATUS|STATUS_PANEL|STATUSBAR|CHARACTER_STATUS)\]([\s\S]*?)\[\/(?:STATUS|STATUS_PANEL|STATUSBAR|CHARACTER_STATUS)\]/gi,
-    /(?:^|\n)\s*:::status[^\n]*\n([\s\S]*?)\n\s*:::(?=\n|$)/gi,
-  ];
-  for (const pattern of markerPatterns) {
-    let match: RegExpExecArray | null;
-    while ((match = pattern.exec(boundedSource)) !== null) {
-      const rows = statusRowsFromText(match[1], true);
-      if (rows.length > 0) return { title: "当前状态", rows };
-    }
-  }
-
-  // Never infer a status panel from the whole reply. Narrative text often
-  // contains words such as time, place, mood, or story; treating those as
-  // fields is what previously swallowed an entire reply into one huge card.
-  return null;
-}
-
-function NativeWidget({ section }: { section: TheaterSection }) {
+function NativeWidget({ section, onPresetAction }: { section: TheaterSection; onPresetAction?: (text: string) => void }) {
   const rows = section.type === "status" ? statusRowsFromText(section.content, true) : parseWidgetRows(section.content);
   if (section.type === "status" && rows.length === 0) return null;
   const title = section.title || (section.type === "status" ? "当前状态" : "剧情组件");
@@ -700,7 +579,7 @@ function NativeWidget({ section }: { section: TheaterSection }) {
       {rows.length > 0 ? (
         <dl>{rows.map((row, index) => <div key={`${row.label}-${index}`}><dt>{row.label}</dt><dd>{row.value}</dd></div>)}</dl>
       ) : (
-        <div className="native-widget-body"><MarkdownBlocks content={section.content} /></div>
+        <div className="native-widget-body"><MarkdownBlocks content={section.content} onPresetAction={onPresetAction} /></div>
       )}
     </section>
   );
@@ -800,11 +679,11 @@ function splitRichSections(content: string, theaterEnabled: boolean, widgetsEnab
   return sections;
 }
 
-export function SafeMessageContent({ source, config, rawMode = false, showWarnings = false }: Props) {
+export function SafeMessageContent({ source, config, rawMode = false, showWarnings = false, depth = 0, onPresetAction }: Props) {
   const resolvedConfig = useMemo(() => normalizeOutputRenderer(config), [config]);
   const result = useMemo(
-    () => transformOutputContent(source, resolvedConfig),
-    [resolvedConfig, source],
+    () => transformOutputContent(source, resolvedConfig, "assistant", depth),
+    [depth, resolvedConfig, source],
   );
   const sections = useMemo(
     () => splitRichSections(result.content, resolvedConfig.theater, resolvedConfig.widgets),
@@ -818,12 +697,12 @@ export function SafeMessageContent({ source, config, rawMode = false, showWarnin
       {sections.map((section, index) => section.type === "theater" ? (
         <details className={`theater-card theater-card--${resolvedConfig.theaterTheme}`} open key={`theater-${index}-${section.title}`}>
           <summary><span>✦</span>{section.title}</summary>
-          <div className="theater-card-body"><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} statusSource={source} /></div>
+          <div className="theater-card-body"><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} onPresetAction={onPresetAction} /></div>
         </details>
       ) : section.type === "status" || section.type === "widget" ? (
-        <NativeWidget section={section} key={`${section.type}-${index}-${section.title}`} />
+        <NativeWidget section={section} onPresetAction={onPresetAction} key={`${section.type}-${index}-${section.title}`} />
       ) : (
-        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} statusSource={source} /></div>
+        <div className="markdown-content" key={`text-${index}`}><RichBlocks content={section.content} isolatedHtml={resolvedConfig.isolatedHtml} onPresetAction={onPresetAction} /></div>
       ))}
       {showWarnings && result.warnings.length > 0 ? <div className="renderer-warnings" role="status">{result.warnings.map((warning) => <small key={warning}>{warning}</small>)}</div> : null}
     </div>

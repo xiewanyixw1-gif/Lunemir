@@ -123,6 +123,7 @@ export type PromptModule = {
   content: string;
   enabled: boolean;
   position: "system" | "post_history";
+  role: "system" | Role;
   priority: number;
   order: number;
 };
@@ -135,12 +136,11 @@ export type OutputRegexRule = {
   flags: string;
   enabled: boolean;
   scope: "assistant" | "all";
-};
-
-export type PromptFilterRule = OutputRegexRule & {
   minDepth?: number;
   maxDepth?: number;
 };
+
+export type PromptFilterRule = OutputRegexRule;
 
 export type OutputRendererConfig = {
   enabled: boolean;

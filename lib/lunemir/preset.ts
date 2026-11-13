@@ -8,6 +8,7 @@ export function createPromptModule(index: number): PromptModule {
     content: "",
     enabled: true,
     position: "system",
+    role: "system",
     priority: 0,
     order: index,
   };

@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, PointerEvent as ReactPointerEvent } from "react";
 import { normalizeEmbeddedOutputRenderer, normalizeOutputRenderer, resolveOutputRendererConfig } from "../../lib/lunemir/output-renderer";
 import { replaceRoleMacros } from "../../lib/lunemir/macros";
@@ -149,6 +149,7 @@ export function LunemirPrototype() {
   const [rawMessageIds, setRawMessageIds] = useState<Set<string>>(() => new Set());
   const [showJumpToLatest, setShowJumpToLatest] = useState(false);
   const messageListRef = useRef<HTMLElement | null>(null);
+  const composerTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const phoneMessageListRef = useRef<HTMLDivElement | null>(null);
   const followOutputRef = useRef(true);
   const phoneDragRef = useRef<{
@@ -183,6 +184,19 @@ export function LunemirPrototype() {
     if (textarea) textarea.style.height = "auto";
     void runtime.sendMessage(content);
   }
+
+  const handlePresetAction = useCallback((value: string) => {
+    const text = value.trim().slice(0, 4_000);
+    if (!text) return;
+    setDraft(text);
+    requestAnimationFrame(() => {
+      const textarea = composerTextareaRef.current;
+      if (!textarea) return;
+      textarea.focus({ preventScroll: true });
+      textarea.style.height = "auto";
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 132)}px`;
+    });
+  }, []);
 
   const activeName = runtime.activeCharacter?.nickname || runtime.activeCharacter?.name || "Lunemir";
   const activeSignature = runtime.activeCharacter?.signature?.trim() ?? "";
@@ -686,7 +700,13 @@ export function LunemirPrototype() {
                               <span><button onClick={() => setEditingMessageId("")}>取消</button><button onClick={() => void saveMessageEdit()}>保存</button></span>
                             </div>
                           ) : message.role === "assistant" && messageOutputRenderer ? (
-                            <SafeMessageContent source={displayContent} config={messageOutputRenderer} rawMode={rawMessageIds.has(message.id)} />
+                            <SafeMessageContent
+                              source={displayContent}
+                              config={messageOutputRenderer}
+                              rawMode={rawMessageIds.has(message.id)}
+                              depth={runtime.messages.length - 1 - index}
+                              onPresetAction={handlePresetAction}
+                            />
                           ) : runtime.appearance.messageStyle === "novel-flow" && !isUser ? (
                             <div className="novel-message-content">
                               {displayContent.trim().split(/\n\s*\n/).map((paragraph, paragraphIndex) => <p key={`${message.id}-paragraph-${paragraphIndex}`}>{paragraph.trim()}</p>)}
@@ -739,6 +759,7 @@ export function LunemirPrototype() {
               <label className="composer-field">
                 <span className="sr-only">输入消息</span>
                 <textarea
+                  ref={composerTextareaRef}
                   name="message"
                   value={draft}
                   onChange={(event) => {

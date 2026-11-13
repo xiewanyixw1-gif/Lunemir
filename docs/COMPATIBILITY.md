@@ -67,6 +67,11 @@ v0.2 支持：
 - 导入独立 `promptOnly` Regex 时，如果已经启用写作预设，规则会合并到当前预设而不是替换它；同一查找与替换规则会自动去重；
 - Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、HTML/CSS 隔离开关、小剧场主题、原生组件和 Regex 配置；
 - 当预设提示词或 Regex replacement 已定义 HTML/CSS、状态栏或 UI 模板时，模型上下文与显示层都会优先遵守该格式；仅在受限 sandbox 内支持模板自带的局部 JavaScript 交互；
+- 角色卡状态栏、预设模板和世界书小剧场使用各自的来源规则：专属模板存在时不会再插入 Lunemir 通用状态卡，正文也不会被扫描并猜测为状态字段；
+- 自包含标签页组件支持原脚本以及常见 `role="tab"`、`aria-controls`、`data-tab`、`data-target` 声明式切换；脚本失败时保留可读的初始内容，不显示永久加载占位；
+- 兼容未标注语言但内容以 `<!DOCTYPE html>` / `<html>` 开始的 HTML 围栏；它们会进入隔离渲染层，而不是以源码正文显示；
+- 隔离组件不能直接读取 Lunemir 父页面，但常见行动选项的 `data-text`、选中类与选项节点可通过受限消息桥写入主聊天输入框；
+- 聊天预设会保留模块的 `system` / `user` / `assistant` 消息角色；输出 Regex 与请求前 Regex 分开执行，并保留 `minDepth` / `maxDepth` 的最近消息范围；
 - 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 - 小剧场支持 `:::theater`、HTML fenced block 以及常见的 `<snow><details><summary>…` 包装；标题、正文和 fenced HTML 会作为同一张小剧场卡片处理；
 - 支持 `{{random::选项一::选项二}}` 与 `{{random:选项一,选项二}}` 随机宏，并在同一次上下文编译中保持结果稳定；

@@ -83,7 +83,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
 
   function duplicateModule() {
     if (!activeModule) return;
-    const duplicate = { ...activeModule, ...createPromptModule(activeIndex + 1), name: `${activeModule.name} · 副本`, content: activeModule.content, enabled: activeModule.enabled, position: activeModule.position, priority: activeModule.priority };
+    const duplicate = { ...activeModule, ...createPromptModule(activeIndex + 1), name: `${activeModule.name} · 副本`, content: activeModule.content, enabled: activeModule.enabled, position: activeModule.position, role: activeModule.role ?? "system", priority: activeModule.priority };
     const next = [...modules];
     next.splice(activeIndex + 1, 0, duplicate);
     setModules(next.map((module, index) => ({ ...module, order: index })));
@@ -189,6 +189,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
                 <div className="preset-module-grid">
                   <label className="wide"><span>模块名称</span><input value={activeModule.name} onChange={(event) => updateModule({ name: event.target.value })} maxLength={160} /></label>
                   <label><span>插入位置</span><select value={activeModule.position} onChange={(event) => updateModule({ position: event.target.value as PromptModule["position"] })}><option value="system">系统提示词</option><option value="post_history">历史消息之后</option></select></label>
+                  <label><span>消息角色</span><select value={activeModule.role ?? "system"} onChange={(event) => updateModule({ role: event.target.value as PromptModule["role"] })}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></label>
                   <label><span>优先级</span><input type="number" min={-1000} max={1000} value={activeModule.priority} onChange={(event) => updateModule({ priority: Number(event.target.value) })} /></label>
                   <label className="wide"><span>提示词内容</span><textarea value={activeModule.content} onChange={(event) => updateModule({ content: event.target.value })} rows={13} placeholder="支持 {{char}} 与 {{user}} 宏…" /></label>
                 </div>
@@ -198,7 +199,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
           </div>
 
           <details className="preset-renderer-settings" open>
-            <summary><span><strong>小剧场与输出美化</strong><small>安全渲染 Markdown、卡片和 Regex；不会执行脚本。</small></span><i>{outputRenderer.enabled ? "已启用" : "已关闭"}</i></summary>
+            <summary><span><strong>小剧场与输出美化</strong><small>安全渲染 Markdown、卡片和 Regex；交互脚本只在隔离组件内运行。</small></span><i>{outputRenderer.enabled ? "已启用" : "已关闭"}</i></summary>
             <div className="preset-renderer-body">
               {promptFilters.length > 0 ? (
                 <div className="renderer-import-summary" role="note">
@@ -217,7 +218,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
               <div className="renderer-options">
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.enabled} onChange={(event) => updateRenderer({ enabled: event.target.checked })} /><span><strong>启用输出美化</strong><small>关闭后聊天区始终显示模型原文。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.markdown} onChange={(event) => updateRenderer({ markdown: event.target.checked })} /><span><strong>Markdown 与安全 HTML 转换</strong><small>HTML 只转换为安全排版，不运行脚本和外链资源。</small></span></label>
-                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.isolatedHtml} onChange={(event) => updateRenderer({ isolatedHtml: event.target.checked })} /><span><strong>隔离渲染预设 HTML/CSS</strong><small>保留预设 class 与样式，但限制在单条消息内；禁用脚本、表单和网络资源。</small></span></label>
+                <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.isolatedHtml} onChange={(event) => updateRenderer({ isolatedHtml: event.target.checked })} /><span><strong>隔离渲染预设 HTML/CSS</strong><small>保留预设样式与自包含交互；脚本无法访问主程序、网络、存储或提交表单。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.theater} onChange={(event) => updateRenderer({ theater: event.target.checked })} /><span><strong>识别小剧场卡片</strong><small>支持 :::theater 或 ```theater 围栏。</small></span></label>
                 <label className="preset-module-toggle"><input type="checkbox" checked={outputRenderer.widgets} onChange={(event) => updateRenderer({ widgets: event.target.checked })} /><span><strong>识别状态栏与原生组件</strong><small>支持 :::status、:::widget 和 Lunemir 安全组件标签。</small></span></label>
                 <label><span>小剧场样式</span><select value={outputRenderer.theaterTheme} onChange={(event) => updateRenderer({ theaterTheme: event.target.value as OutputRendererConfig["theaterTheme"] })}><option value="glass">月光毛玻璃</option><option value="minimal">极简旁白</option><option value="paper">信笺纸张</option></select></label>
@@ -233,6 +234,8 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
                       <label><span>作用范围</span><select value={rule.scope} onChange={(event) => updateRegexRule(rule.id, { scope: event.target.value as OutputRegexRule["scope"] })}><option value="assistant">仅 AI 回复</option><option value="all">全部输出</option></select></label>
                       <label className="wide"><span>查找表达式</span><input value={rule.pattern} onChange={(event) => updateRegexRule(rule.id, { pattern: event.target.value })} placeholder="例如：\\[小剧场\\]([\\s\\S]*?)\\[/小剧场\\]" spellCheck={false} /></label>
                       <label><span>Flags</span><input value={rule.flags} onChange={(event) => updateRegexRule(rule.id, { flags: event.target.value })} placeholder="gimsu" spellCheck={false} /></label>
+                      <label><span>最小消息深度</span><input type="number" min={0} value={rule.minDepth ?? ""} onChange={(event) => updateRegexRule(rule.id, { minDepth: event.target.value ? Number(event.target.value) : undefined })} placeholder="不限制" /></label>
+                      <label><span>最大消息深度</span><input type="number" min={0} value={rule.maxDepth ?? ""} onChange={(event) => updateRegexRule(rule.id, { maxDepth: event.target.value ? Number(event.target.value) : undefined })} placeholder="不限制" /></label>
                       <label className="wide"><span>替换内容</span><textarea value={rule.replacement} onChange={(event) => updateRegexRule(rule.id, { replacement: event.target.value })} rows={3} placeholder={":::theater 番外\n$1\n:::"} spellCheck={false} /></label>
                     </div>
                   </article>

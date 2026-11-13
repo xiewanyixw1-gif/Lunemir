@@ -37,8 +37,8 @@ export function resolvePresetPrompts(preset?: PresetRecord | null) {
   if (!preset) return { systemPrompt: "", postHistoryInstructions: "", activeModuleCount: 0, activeModules: [] };
   if (!Array.isArray(preset.modules)) {
     const activeModules = [
-      ...(preset.systemPrompt.trim() ? [{ id: "legacy-system", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, priority: 100, order: 0 }] : []),
-      ...(preset.postHistoryInstructions.trim() ? [{ id: "legacy-post-history", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, priority: 100, order: 1 }] : []),
+      ...(preset.systemPrompt.trim() ? [{ id: "legacy-system", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, role: "system" as const, priority: 100, order: 0 }] : []),
+      ...(preset.postHistoryInstructions.trim() ? [{ id: "legacy-post-history", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, role: "system" as const, priority: 100, order: 1 }] : []),
     ];
     return {
       systemPrompt: preset.systemPrompt,
@@ -51,8 +51,8 @@ export function resolvePresetPrompts(preset?: PresetRecord | null) {
     .filter((module) => module.enabled && module.content.trim())
     .sort((left, right) => right.priority - left.priority || left.order - right.order);
   return {
-    systemPrompt: activeModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
-    postHistoryInstructions: activeModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+    systemPrompt: activeModules.filter((module) => module.position === "system" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
+    postHistoryInstructions: activeModules.filter((module) => module.position === "post_history" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
     activeModuleCount: activeModules.length,
     activeModules,
   };
@@ -161,6 +161,12 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
+  const presetRoleMessages = resolvedPreset.activeModules
+    .filter((module) => module.position === "system" && (module.role ?? "system") !== "system")
+    .map((module) => ({ role: module.role as "user" | "assistant", content: replaceMacros(module.content) }));
+  const presetPostRoleMessages = resolvedPreset.activeModules
+    .filter((module) => module.position === "post_history" && (module.role ?? "system") !== "system")
+    .map((module) => ({ role: module.role as "user" | "assistant", content: replaceMacros(module.content) }));
   const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const resolvedOutputRenderer = resolveOutputRendererConfig(
     preset?.outputRenderer,
@@ -168,19 +174,22 @@ export function compileContext(
     character.embeddedRendererEnabled !== false,
   );
   const rendererConfig = resolvedOutputRenderer ?? normalizeOutputRenderer(preset?.outputRenderer);
+  const presentationPromptSource = `${resolvedPreset.activeModules.map((module) => module.content).join("\n")}\n${character.systemPrompt}\n${loreText}`;
   const hasCustomPresentation = presetUsesCustomPresentation(
     rendererConfig,
-    `${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`,
+    presentationPromptSource,
   );
   const rendererProvidesTemplate = presetUsesCustomPresentation(rendererConfig);
+  const interactiveTheaterRequested = /<script\b|\son[a-z]+\s*=|\bdata-(?:tab|target|action)\s*=|(?:交互|切换).{0,20}(?:按钮|标签|页面|面板)|(?:按钮|标签|页面|面板).{0,20}(?:交互|切换)/i
+    .test(presentationPromptSource);
   const nativeWidgetRequested = /:::status\b|:::widget\b|<lunemir-(?:status|widget)\b|\[(?:UI_PANEL|STATUS_PANEL)\]/i
-    .test(`${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`);
+    .test(presentationPromptSource);
   const snowTheaterRequested = /<snow(?:\s|>)|<snow_rules\b/i
-    .test(`${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}\n${loreText}`);
+    .test(presentationPromptSource);
   const outputProtocol = rendererProvidesTemplate
-    ? `输出呈现规则：当前角色卡或预设已经带有专属的状态栏/Regex 后处理器。你只需要输出它要求的动态字段、占位标记和剧情正文；CSS、<style>、完整 HTML 模板与样式说明属于渲染资源，禁止在回复中复述、解释或改写。不要额外输出 Lunemir 的 :::status / :::widget，也不要再生成第二套状态栏。正文必须保持正常段落结构，并放在专属模板规定的正文区域。若旧模板原本依赖脚本填充，请在同一回复中保留模板要求的最终状态键值（如时间、地点、天气、情绪、动作），不得只留下“正在渲染/加载”等等待文案。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
+    ? `输出呈现规则：当前角色卡或预设已经带有专属的状态栏/Regex 后处理器。主状态栏只输出它要求的动态字段、占位标记和剧情正文；CSS、<style>、完整 HTML 模板与样式说明由后处理器负责，禁止在回复中复述、解释或改写。不要额外输出 Lunemir 的 :::status / :::widget，也不要再生成第二套状态栏。正文必须保持正常段落结构，并放在专属模板规定的正文区域。若旧模板原本依赖脚本填充，请保留模板要求的最终状态键值，不得只留下“正在渲染/加载”等等待文案。除世界书明确要求的独立小剧场外，不要额外生成 JavaScript、事件处理器、表单或外部网络资源。`
     : hasCustomPresentation
-      ? `输出呈现规则：当前角色卡或预设在提示词中定义了专属状态栏或 HTML/CSS 格式，但没有可由程序复用的 Regex 模板。请严格按照其中规定的完整 HTML 结构输出一次，不要改写成 Lunemir 的 :::status / :::widget，也不要同时生成第二套状态栏。需要的 <style> 可以随该 HTML 输出一次，不要把 CSS 当作解释性正文，不要使用 Markdown 代码围栏包裹 HTML。小说正文必须保持正常段落和空行，并放在模板指定的 content、正文或主内容区域。不要输出“正在渲染/加载”等依赖脚本替换的等待占位文案，直接填写最终静态内容。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
+      ? `输出呈现规则：当前角色卡、预设或已命中的世界书定义了专属状态栏或 HTML/CSS 格式，但没有可复用的 Regex 模板。严格按原规则输出一次完整结构，不要改写成 Lunemir 的 :::status / :::widget，也不要生成第二套状态栏。需要的 <style> 可随 HTML 输出一次，不要把 CSS 当作解释性正文，不要用 Markdown 代码围栏包裹 HTML。小说正文保持正常段落和空行，并放入模板指定的 content、正文或主内容区域。不要留下“正在渲染/加载”等占位文案。${interactiveTheaterRequested ? "规则明确要求交互时，可以在该独立组件内部输出自包含的内联 JavaScript 或事件处理器；脚本只能操作本组件 DOM，不得访问父页面、网络、存储、表单提交或外部库，并且初始画面在脚本失败时仍必须完整可读。" : "当前规则未要求交互，不要额外输出 JavaScript、事件处理器、表单或外部网络资源。"}`
     : nativeWidgetRequested && rendererConfig.widgets
       ? `Lunemir 原生组件回退协议：只有当当前预设明确要求状态栏或小组件、但没有规定自己的输出模板时，才使用下面的纯文本格式：
 :::status 状态栏标题
@@ -191,7 +200,7 @@ export function compileContext(
 其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。角色卡或预设没有要求组件时，不要额外生成状态栏。`
         : "";
   const snowTheaterProtocol = snowTheaterRequested
-    ? "Lunemir 小剧场兼容协议：严格遵守已启用小剧场规则规定的 <snow>、<details>、<summary> 与内容顺序。若规则要求 HTML fenced block，必须把完整 HTML/CSS 放在该围栏内；若规则要求纯文字，则不要擅自添加代码。不要把 CSS、标签说明或设计过程散落到小说正文中。Lunemir 不执行 JavaScript、表单或外部网络资源，因此交互型小剧场应同时给出无需脚本即可阅读的完整初始画面，并优先用安全 HTML/CSS 呈现。小说正文保持在 <snow> 小剧场之外。"
+    ? `Lunemir 小剧场兼容协议：严格遵守已启用世界书小剧场规则规定的 <snow>、<details>、<summary> 与内容顺序。若规则要求 HTML fenced block，必须把完整 HTML/CSS 放在该围栏内；若规则要求纯文字，则不要擅自添加代码。不要把 CSS、标签说明或设计过程散落到小说正文中。${interactiveTheaterRequested ? "规则明确要求交互时，允许在小剧场内部使用自包含的内联脚本和按钮切换；禁止网络请求、外部库、父页面访问、存储和表单提交，并提供无需脚本也能阅读的默认页。" : "当前小剧场不需要脚本，使用安全 HTML/CSS 或纯文字呈现。"}小说正文保持在 <snow> 小剧场之外。`
     : "";
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
   const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";
@@ -251,7 +260,7 @@ export function compileContext(
       id: "preset",
       label: "提示词预设",
       detail: `${preset?.name ?? "Preset"} · ${resolvedPreset.activeModuleCount} 个模块`,
-      estimatedTokens: estimateTokens([presetPrompt, presetPostHistory].filter(Boolean).join("\n\n")),
+      estimatedTokens: estimateTokens(resolvedPreset.activeModules.map((module) => replaceMacros(module.content)).join("\n\n")),
     }] : []),
     ...(loreText ? [{
       id: "lore",
@@ -302,7 +311,13 @@ export function compileContext(
     const insertionIndex = Math.max(0, historyMessages.length - Math.max(0, options.authorNote.depth));
     historyMessages.splice(insertionIndex, 0, { role: "system", content: `作者注释：\n${authorNoteText}` });
   }
-  const modelMessages: ModelMessage[] = [{ role: "system", content: systemContent }, ...historyMessages, ...(postHistory ? [{ role: "system" as const, content: postHistory }] : [])];
+  const modelMessages: ModelMessage[] = [
+    { role: "system", content: systemContent },
+    ...presetRoleMessages,
+    ...historyMessages,
+    ...(postHistory ? [{ role: "system" as const, content: postHistory }] : []),
+    ...presetPostRoleMessages,
+  ];
   const estimatedTokens = modelMessages.reduce((total, message) => total + estimateTokens(message.content), 0);
   const promptMessages = modelMessages.map((message, index) => ({
     id: `${message.role}-${index}`,

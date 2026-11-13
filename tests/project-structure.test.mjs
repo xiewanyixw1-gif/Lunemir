@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import { buildPresetSandboxDocument, hasInteractivePresetMarkup } from "../lib/lunemir/preset-sandbox.mjs";
 
 const root = new URL("../", import.meta.url);
 
@@ -313,7 +314,7 @@ test("supports alternate opening selection and an immersive compact chat", async
 });
 
 test("renders preset HTML and interactive theater code in isolated layers", async () => {
-  const [renderer, component, editor, runtime, importer, prototype, context] = await Promise.all([
+  const [renderer, component, editor, runtime, importer, prototype, context, sandbox] = await Promise.all([
     readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
     readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
     readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
@@ -321,6 +322,7 @@ test("renders preset HTML and interactive theater code in isolated layers", asyn
     readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
     readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
     readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/preset-sandbox.mjs", root), "utf8"),
   ]);
   assert.match(renderer, /normalizeImportedOutputRenderer/);
   assert.match(renderer, /normalizeImportedPromptFilters/);
@@ -331,13 +333,14 @@ test("renders preset HTML and interactive theater code in isolated layers", asyn
   assert.match(renderer, /if \(!preservePresetComponents\)/);
   assert.match(renderer, /presetUsesCustomPresentation/);
   assert.match(renderer, /hasCssTemplate/);
-  assert.match(renderer, /style\|content\|div/);
+  assert.match(renderer, /script\\b\|<button/);
   assert.doesNotMatch(component, /dangerouslySetInnerHTML/);
   assert.match(component, /SAFE_HTML_TAGS/);
   assert.match(component, /new DOMParser/);
   assert.match(component, /attachShadow/);
   assert.match(component, /sandbox="allow-scripts"/);
-  assert.match(component, /connect-src 'none'/);
+  assert.match(sandbox, /connect-src 'none'/);
+  assert.match(sandbox, /form-action 'none'/);
   assert.match(component, /event\.source !== iframeRef\.current\?\.contentWindow/);
   assert.match(component, /sanitizePresetCss/);
   assert.match(component, /replace\(\/url/);
@@ -351,10 +354,12 @@ test("renders preset HTML and interactive theater code in isolated layers", asyn
   assert.match(component, /isInertLoadingPlaceholder/);
   assert.match(component, /正在\|正为你/);
   assert.match(component, /rendering\|loading\|generating/);
-  assert.match(component, /extractMessageStatus/);
+  assert.doesNotMatch(component, /extractMessageStatus/);
   assert.doesNotMatch(component, /statusRowsFromText\(parsed\.body\.textContent/);
-  assert.match(component, /data-lunemir-status-compat/);
-  assert.match(component, /script\[type=\"application\/json\"\]/);
+  assert.doesNotMatch(component, /data-lunemir-status-compat/);
+  assert.match(component, /hasInteractivePresetMarkup/);
+  assert.match(component, /buildPresetSandboxDocument/);
+  assert.doesNotMatch(component, /script\[type=\"application\/json\"\]/);
   assert.doesNotMatch(component, /PresetCompatibilityContext/);
   assert.doesNotMatch(component, /尚无已确认的长期记忆/);
   assert.match(renderer, /:::status/);
@@ -377,6 +382,8 @@ test("renders preset HTML and interactive theater code in isolated layers", asyn
   assert.match(context, /applyPromptFilters/);
   assert.match(context, /replaceRandomMacros/);
   assert.match(context, /nativeWidgetRequested/);
+  assert.match(context, /presentationPromptSource/);
+  assert.match(context, /loreText/);
   assert.match(context, /snowTheaterProtocol/);
   assert.doesNotMatch(context, /preset\?\.outputRenderer\?\.enabled && rendererConfig\.widgets/);
   assert.match(runtime, /mergeIntoActivePreset/);
@@ -604,6 +611,52 @@ test("shows model reasoning, safely renders HTML, and continues truncated stream
   assert.match(styles, /safe-html-content table/);
 });
 
+test("builds one isolated interactive document with working local tab fallbacks", () => {
+  const source = `<!doctype html><html><head><style>.panel{color:white}</style></head><body>
+    <nav class="bottom-nav" role="tablist">
+      <button role="tab" aria-controls="account">会所账单</button>
+      <button role="tab" aria-controls="notes">私人备忘录</button>
+    </nav>
+    <section id="account" class="tab-pane">账单内容</section>
+    <section id="notes" class="tab-pane">备忘内容</section>
+  </body></html>`;
+  const document = buildPresetSandboxDocument(source);
+
+  assert.equal(hasInteractivePresetMarkup(source), true);
+  assert.equal((document.match(/<html>/g) ?? []).length, 1);
+  assert.match(document, /data-lunemir-sandbox-runtime/);
+  assert.match(document, /activateDeclarativeTab/);
+  assert.match(document, /MutationObserver\(scheduleSize\)/);
+  assert.match(document, /removeStaleLoadingPlaceholders/);
+  assert.match(document, /lunemir-preset-action/);
+  assert.match(document, /sendSelectedOptions/);
+  assert.match(document, /data-text/);
+  assert.match(document, /connect-src 'none'/);
+  assert.match(document, /form-action 'none'/);
+  assert.doesNotMatch(document, /img-src[^;]*https?:/);
+  assert.match(document, /会所账单/);
+  assert.match(document, /私人备忘录/);
+});
+
+test("preserves advanced preset roles, depth limits, and unlabeled HTML output", async () => {
+  const [types, importer, renderer, context, component, prototype] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
+    readFile(new URL("app/components/LunemirPrototype.tsx", root), "utf8"),
+  ]);
+  assert.match(types, /role: Role/);
+  assert.match(types, /maxDepth\?: number/);
+  assert.match(importer, /const importedRole = asString\(prompt\.role\)/);
+  assert.match(renderer, /rule\.maxDepth !== undefined && depth > rule\.maxDepth/);
+  assert.match(context, /presetRoleMessages/);
+  assert.match(component, /const unlabeledHtml/);
+  assert.match(component, /lunemir-preset-action/);
+  assert.match(prototype, /handlePresetAction/);
+});
+
 test("prioritizes character-card renderers without corrupting story paragraphs", async () => {
   const [types, importer, renderer, context, prototype, editor, component, styles] = await Promise.all([
     readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
@@ -621,8 +674,8 @@ test("prioritizes character-card renderers without corrupting story paragraphs",
   assert.match(renderer, /resolveOutputRendererConfig/);
   assert.match(renderer, /normalizeLeakedStyleSource/);
   assert.match(renderer, /stripNativeFallbackSections/);
-  assert.match(context, /CSS、<style>、完整 HTML 模板与样式说明属于渲染资源/);
-  assert.match(context, /没有可由程序复用的 Regex 模板/);
+  assert.match(context, /CSS、<style>、完整 HTML 模板与样式说明由后处理器负责/);
+  assert.match(context, /但没有可复用的 Regex 模板/);
   assert.match(context, /rendererProvidesTemplate/);
   assert.match(prototype, /resolveOutputRendererConfig/);
   assert.match(prototype, /自带状态栏/);

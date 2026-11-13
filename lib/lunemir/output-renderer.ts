@@ -67,6 +67,8 @@ export function normalizeOutputRenderer(config?: Partial<OutputRendererConfig> |
           flags: cleanFlags(rule.flags ?? "g"),
           enabled: rule.enabled !== false,
           scope: rule.scope === "all" ? "all" : "assistant",
+          minDepth: optionalDepth(rule.minDepth),
+          maxDepth: optionalDepth(rule.maxDepth),
         }))
       : [],
   };
@@ -185,6 +187,8 @@ export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
         flags: asString(rule.flags) || "g",
         enabled: rule.enabled !== false,
         scope: rule.scope === "all" ? "all" : "assistant",
+        minDepth: optionalDepth(rule.minDepth ?? rule.min_depth),
+        maxDepth: optionalDepth(rule.maxDepth ?? rule.max_depth),
       })),
     });
   }
@@ -204,6 +208,8 @@ export function normalizeImportedOutputRenderer(raw: UnknownRecord) {
       flags: cleanFlags(literal.flags),
       enabled: script.disabled !== true && script.promptOnly !== true && supportsAssistantOutput,
       scope: "assistant" as const,
+      minDepth: optionalDepth(script.minDepth ?? script.min_depth),
+      maxDepth: optionalDepth(script.maxDepth ?? script.max_depth),
     }];
   });
 
@@ -382,7 +388,7 @@ function normalizeSafeHtml(value: string, preservePresetComponents = false) {
       .replace(/<script\b[^>]*\/?\s*>/gi, "")
       .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
       .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
-  } else if (/<style\b|\bclass\s*=|\bid\s*=|<\/?(?:content|statusbar|[a-z][\w]*-[\w-]+)\b/i.test(output)) {
+  } else {
     // A character card or preset owns the presentation. Remove only Lunemir's
     // generated fallback blocks so old replies cannot display two status bars.
     output = stripNativeFallbackSections(output);
@@ -397,7 +403,7 @@ export function presetUsesCustomPresentation(config: OutputRendererConfig, promp
     .map((rule) => rule.replacement)
     .join("\n");
   const presentationSource = `${promptText}\n${rendererText}`;
-  const hasHtmlTemplate = /<(?:!doctype|style|content|div|section|article|header|footer|table|details|progress|meter|status(?:block|-bar)?|character-status|widget(?:block|-block)?)\b|\bclass\s*=|\bid\s*=|\[(?:ui_panel|status_panel|statusbar)\]/i
+  const hasHtmlTemplate = /<(?:!doctype|style|script|content|div|section|article|header|footer|nav|button|table|details|progress|meter|status(?:block|-bar)?|character-status|widget(?:block|-block)?)\b|\bclass\s*=|\bid\s*=|\son[a-z]+\s*=|\bdata-(?:tab|target|action)\s*=|\[(?:ui_panel|status_panel|statusbar)\]/i
     .test(presentationSource);
   const hasCssTemplate = /(?:^|\n)\s*(?:[.#][a-z_][\w-]*(?:\s+[.#]?[a-z_][\w-]*)*|@(?:media|supports|container)\b[^\n{]*)\s*\{/im
     .test(presentationSource);
@@ -414,6 +420,7 @@ export function transformOutputContent(
   source: string,
   config: OutputRendererConfig,
   role: Role = "assistant",
+  depth = 0,
 ): OutputTransformResult {
   if (!config.enabled || role !== "assistant") return { content: source, changed: false, warnings: [] };
   let content = source.slice(0, MAX_OUTPUT_LENGTH);
@@ -421,6 +428,8 @@ export function transformOutputContent(
 
   for (const rule of config.regexRules.slice(0, MAX_RULES)) {
     if (!rule.enabled || !rule.pattern || (rule.scope === "assistant" && role !== "assistant")) continue;
+    if (rule.minDepth !== undefined && depth < rule.minDepth) continue;
+    if (rule.maxDepth !== undefined && depth > rule.maxDepth) continue;
     if (likelyUnsafeRegex(rule.pattern)) {
       warnings.push(`${rule.name}：表达式过长或可能造成卡顿，已跳过。`);
       continue;
@@ -436,7 +445,7 @@ export function transformOutputContent(
   if (config.markdown) {
     const preservePresetComponents = config.isolatedHtml && (
       presetUsesCustomPresentation(config)
-      || /<style\b|\bclass\s*=|\bid\s*=/i.test(content)
+      || /<style\b|<script\b|<button\b|\bclass\s*=|\bid\s*=|\son[a-z]+\s*=|\bdata-(?:tab|target|action)\s*=/i.test(content)
     );
     content = normalizeSafeHtml(content, preservePresetComponents);
   }

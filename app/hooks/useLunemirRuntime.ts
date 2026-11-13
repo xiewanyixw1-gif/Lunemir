@@ -1950,8 +1950,8 @@ export function useLunemirRuntime() {
           ...existing,
           name: values.name.trim(),
           modules,
-          systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
-          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          systemPrompt: enabledModules.filter((module) => module.position === "system" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
+          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
           promptFilters: values.promptFilters.map((rule) => ({ ...rule })),
           modelPatch: { ...values.modelPatch },
           outputRenderer: normalizeOutputRenderer(values.outputRenderer),
@@ -1963,8 +1963,8 @@ export function useLunemirRuntime() {
           name: values.name.trim(),
           sourceName: "Created in Lunemir",
           modules,
-          systemPrompt: enabledModules.filter((module) => module.position === "system").map((module) => module.content).join("\n\n"),
-          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history").map((module) => module.content).join("\n\n"),
+          systemPrompt: enabledModules.filter((module) => module.position === "system" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
+          postHistoryInstructions: enabledModules.filter((module) => module.position === "post_history" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
           promptFilters: values.promptFilters.map((rule) => ({ ...rule })),
           modelPatch: { ...values.modelPatch },
           outputRenderer: normalizeOutputRenderer(values.outputRenderer),
@@ -2014,15 +2014,15 @@ export function useLunemirRuntime() {
     const preset = presets.find((item) => item.id === presetId);
     if (!preset) return;
     const modules = preset.modules ?? [
-      ...(preset.systemPrompt ? [{ id: "main", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, priority: 0, order: 0 }] : []),
-      ...(preset.postHistoryInstructions ? [{ id: "jailbreak", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, priority: 0, order: 1 }] : []),
+      ...(preset.systemPrompt ? [{ id: "main", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, role: "system" as const, priority: 0, order: 0 }] : []),
+      ...(preset.postHistoryInstructions ? [{ id: "jailbreak", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, role: "system" as const, priority: 0, order: 1 }] : []),
     ];
     const ordered = [...modules].sort((left, right) => left.order - right.order);
     const prompts = ordered.map((module) => ({
       identifier: module.id,
       name: module.name,
       content: module.content,
-      role: "system",
+      role: module.role ?? "system",
       system_prompt: module.position === "system",
       lunemir_position: module.position,
       marker: false,

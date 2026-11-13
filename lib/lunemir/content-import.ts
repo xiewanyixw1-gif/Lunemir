@@ -1,7 +1,7 @@
 import { normalizeCharacterCard, normalizeLorebookEntries, parseCharacterFile } from "./character-import";
 import { createId } from "./defaults";
 import { normalizeImportedOutputRenderer, normalizeImportedPromptFilters } from "./output-renderer";
-import type { ContentImportPreview, LorebookRecord, PresetRecord } from "./types";
+import type { ContentImportPreview, LorebookRecord, PresetRecord, PromptModule } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -67,6 +67,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     .map((prompt, index) => {
       const identifier = asString(prompt.identifier);
       const orderEntry = orderByIdentifier.get(identifier);
+      const importedRole = asString(prompt.role);
       return {
         id: identifier ? `${identifier}_${index}` : createId("prompt"),
         name: asString(prompt.name) || identifier || `提示词 ${index + 1}`,
@@ -75,6 +76,7 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
         position: identifier === "jailbreak" || asString(prompt.lunemir_position) === "post_history"
           ? "post_history" as const
           : "system" as const,
+        role: (importedRole === "user" || importedRole === "assistant" ? importedRole : "system") as PromptModule["role"],
         priority: asNumber(prompt.priority) ?? 0,
         order: orderEntry?.order ?? orderEntries.length + index,
       };
@@ -82,11 +84,11 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     .sort((left, right) => left.order - right.order);
   const enabledPrompts = modules.filter((module) => module.enabled);
   const postHistoryInstructions = enabledPrompts
-    .filter((module) => module.position === "post_history")
+    .filter((module) => module.position === "post_history" && module.role === "system")
     .map((module) => module.content)
     .join("\n\n");
   const systemPrompt = enabledPrompts
-    .filter((module) => module.position === "system")
+    .filter((module) => module.position === "system" && module.role === "system")
     .map((module) => module.content)
     .join("\n\n");
   const temperature = asNumber(raw.temperature);
