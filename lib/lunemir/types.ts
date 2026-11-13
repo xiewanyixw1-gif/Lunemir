@@ -1,5 +1,7 @@
 export type Role = "user" | "assistant";
 
+export type LorebookInsertionPosition = "before_character" | "after_character" | "in_history";
+
 export type LorebookEntry = {
   id: string;
   name: string;
@@ -17,6 +19,8 @@ export type LorebookEntry = {
   useProbability?: boolean;
   recursive?: boolean;
   tokenBudget?: number;
+  insertionPosition?: LorebookInsertionPosition;
+  insertionDepth?: number;
   extensions: Record<string, unknown>;
 };
 
@@ -117,6 +121,16 @@ export type PersonaEditorValues = Pick<PersonaRecord,
   | "notes"
 >;
 
+export type PresetPromptMarker =
+  | "personaDescription"
+  | "worldInfoBefore"
+  | "charDescription"
+  | "charPersonality"
+  | "worldInfoAfter"
+  | "scenario"
+  | "dialogueExamples"
+  | "chatHistory";
+
 export type PromptModule = {
   id: string;
   name: string;
@@ -126,6 +140,7 @@ export type PromptModule = {
   role: "system" | Role;
   priority: number;
   order: number;
+  marker?: PresetPromptMarker;
 };
 
 export type OutputRegexRule = {
@@ -429,6 +444,7 @@ export type ContextPresetModule = {
   id: string;
   name: string;
   position: PromptModule["position"];
+  marker?: PresetPromptMarker;
   priority: number;
   estimatedTokens: number;
 };

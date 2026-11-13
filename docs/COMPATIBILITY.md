@@ -55,6 +55,7 @@ v0.2 支持：
 - 导入后自动绑定当前角色，之后可以逐本启停；
 - 支持新建、编辑、复制、删除和导出独立世界书；
 - 编辑器可管理主次关键词、内容、常驻、组合触发、启用状态、大小写匹配、优先级和条目顺序；
+- 世界书条目支持“角色定义之前”“角色定义之后”和“聊天历史中”三种注入位置；At Depth 条目会按保存的历史深度插入，不再统一堆到系统提示末尾；
 - 世界书库同时列出所有角色卡内嵌世界书与独立世界书；内嵌条目可直接编辑，独立世界书按角色分别启停；
 - 新建和复制的世界书默认绑定当前角色，删除时从全部角色绑定中安全移除；
 - 支持包含 `prompts`、`prompt_order` 和 OpenAI 常用采样字段的聊天预设；
@@ -72,12 +73,13 @@ v0.2 支持：
 - 兼容未标注语言但内容以 `<!DOCTYPE html>` / `<html>` 开始的 HTML 围栏；它们会进入隔离渲染层，而不是以源码正文显示；
 - 隔离组件不能直接读取 Lunemir 父页面，但常见行动选项的 `data-text`、选中类与选项节点可通过受限消息桥写入主聊天输入框；
 - 聊天预设会保留模块的 `system` / `user` / `assistant` 消息角色；输出 Regex 与请求前 Regex 分开执行，并保留 `minDepth` / `maxDepth` 的最近消息范围；
+- 保留并执行 `personaDescription`、`worldInfoBefore`、`charDescription`、`charPersonality`、`worldInfoAfter`、`scenario`、`dialogueExamples` 与 `chatHistory` 结构插槽；角色、人设、世界书和聊天历史会按原 `prompt_order` 放入，而不是把全部内容合并到一条系统消息；
 - 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 - 小剧场支持 `:::theater`、HTML fenced block 以及常见的 `<snow><details><summary>…` 包装；标题、正文和 fenced HTML 会作为同一张小剧场卡片处理；
 - 支持 `{{random::选项一::选项二}}` 与 `{{random:选项一,选项二}}` 随机宏，并在同一次上下文编译中保持结果稳定；
 - 只有预设或角色提示词明确包含状态栏/组件协议时才会要求模型生成原生组件；启用渲染开关本身不会凭空增加状态栏；
 
-复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex、消息级隔离 CSS 与 sandbox 内局部交互，但不允许模板访问 Lunemir 主页、外部 API 或跨消息数据，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+复杂世界书能力中的递归激活、概率、组合关键词、Token 预算以及 Before / After / At Depth 已执行；正则关键词、Outlet 和向量检索仍只保留在原始数据中。预设当前执行结构插槽、独立模块启停、角色、位置、优先级与原始顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex、消息级隔离 CSS 与 sandbox 内局部交互，但不允许模板访问 Lunemir 主页、外部 API 或跨消息数据，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 
 ## 本地数据
 

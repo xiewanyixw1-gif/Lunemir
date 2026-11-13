@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { createOutputRegexRule, normalizeOutputRenderer } from "../../lib/lunemir/output-renderer";
-import { analyzePromptModules, createPromptModule } from "../../lib/lunemir/preset";
+import { analyzePromptModules, createPromptModule, restorePresetStructureMarkers } from "../../lib/lunemir/preset";
 import type { OutputRegexRule, OutputRendererConfig, PresetEditorValues, PresetRecord, PromptFilterRule, PromptModule } from "../../lib/lunemir/types";
 import { SafeMessageContent } from "./SafeMessageContent";
 
@@ -16,8 +16,20 @@ type Props = {
   onDelete?: () => Promise<void> | void;
 };
 
+const MARKER_LABELS: Record<NonNullable<PromptModule["marker"]>, string> = {
+  personaDescription: "用户人设",
+  worldInfoBefore: "世界书（角色前）",
+  charDescription: "角色描述",
+  charPersonality: "角色性格",
+  worldInfoAfter: "世界书（角色后）",
+  scenario: "当前场景",
+  dialogueExamples: "示例对话",
+  chatHistory: "聊天历史",
+};
+
 function initialModules(preset?: PresetRecord) {
-  if (preset?.modules?.length) return preset.modules.map((module) => ({ ...module }));
+  const restoredModules = restorePresetStructureMarkers(preset);
+  if (restoredModules.length) return restoredModules.map((module) => ({ ...module }));
   const legacy: PromptModule[] = [];
   if (preset?.systemPrompt) legacy.push({ ...createPromptModule(legacy.length), name: "System Prompt", content: preset.systemPrompt });
   if (preset?.postHistoryInstructions) legacy.push({ ...createPromptModule(legacy.length), name: "Post-History Instructions", content: preset.postHistoryInstructions, position: "post_history" });
@@ -82,7 +94,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   }
 
   function duplicateModule() {
-    if (!activeModule) return;
+    if (!activeModule || activeModule.marker) return;
     const duplicate = { ...activeModule, ...createPromptModule(activeIndex + 1), name: `${activeModule.name} · 副本`, content: activeModule.content, enabled: activeModule.enabled, position: activeModule.position, role: activeModule.role ?? "system", priority: activeModule.priority };
     const next = [...modules];
     next.splice(activeIndex + 1, 0, duplicate);
@@ -91,7 +103,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
   }
 
   function removeModule() {
-    if (!activeModule) return;
+    if (!activeModule || activeModule.marker) return;
     if (modules.length === 1) {
       setError("一个预设至少需要保留一个提示词模块。");
       return;
@@ -156,7 +168,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
         <button className="modal-close" onClick={onClose} aria-label="关闭预设编辑器">×</button>
         <span className="eyebrow">PROMPT PRESET EDITOR</span>
         <h2 id="preset-editor-title">{preset ? `编辑 ${preset.name}` : "创建新预设"}</h2>
-        <p className="preset-editor-intro">优先级较高的模块先注入；优先级相同时按列表顺序执行。历史后置模块会放在最近对话之后。</p>
+        <p className="preset-editor-intro">模块严格按列表顺序注入；结构插槽会在对应位置放入角色、人设、世界书与聊天历史。相同位置的自定义模块再按优先级处理。</p>
 
         <form onSubmit={submit}>
           <div className="preset-meta-grid">
@@ -173,7 +185,7 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
                 {modules.map((module, index) => (
                   <button type="button" className={module.id === activeModuleId ? "is-active" : ""} key={module.id} onClick={() => { setActiveModuleId(module.id); setError(""); }}>
                     <i className={module.enabled ? "is-enabled" : ""} />
-                    <span><strong>{module.name || `模块 ${index + 1}`}</strong><small>{module.position === "post_history" ? "历史后置" : "系统提示"} · P{module.priority}</small></span>
+                    <span><strong>{module.name || `模块 ${index + 1}`}</strong><small>{module.marker ? `结构插槽 · ${MARKER_LABELS[module.marker]}` : module.position === "post_history" ? "历史后置" : "系统提示"}{module.marker ? "" : ` · P${module.priority}`}</small></span>
                   </button>
                 ))}
               </div>
@@ -184,15 +196,22 @@ export function PresetEditorModal({ preset, onClose, onSave, onDuplicate, onExpo
               <div className="preset-module-editor">
                 <div className="preset-module-toolbar">
                   <span>模块 {activeIndex + 1}</span>
-                  <div><button type="button" onClick={() => moveModule(-1)} disabled={activeIndex === 0} aria-label="上移模块">↑</button><button type="button" onClick={() => moveModule(1)} disabled={activeIndex === modules.length - 1} aria-label="下移模块">↓</button><button type="button" onClick={duplicateModule}>复制</button><button className="danger" type="button" onClick={removeModule}>删除</button></div>
+                  <div><button type="button" onClick={() => moveModule(-1)} disabled={activeIndex === 0} aria-label="上移模块">↑</button><button type="button" onClick={() => moveModule(1)} disabled={activeIndex === modules.length - 1} aria-label="下移模块">↓</button><button type="button" onClick={duplicateModule} disabled={Boolean(activeModule.marker)}>复制</button><button className="danger" type="button" onClick={removeModule} disabled={Boolean(activeModule.marker)}>删除</button></div>
                 </div>
-                <div className="preset-module-grid">
-                  <label className="wide"><span>模块名称</span><input value={activeModule.name} onChange={(event) => updateModule({ name: event.target.value })} maxLength={160} /></label>
-                  <label><span>插入位置</span><select value={activeModule.position} onChange={(event) => updateModule({ position: event.target.value as PromptModule["position"] })}><option value="system">系统提示词</option><option value="post_history">历史消息之后</option></select></label>
-                  <label><span>消息角色</span><select value={activeModule.role ?? "system"} onChange={(event) => updateModule({ role: event.target.value as PromptModule["role"] })}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></label>
-                  <label><span>优先级</span><input type="number" min={-1000} max={1000} value={activeModule.priority} onChange={(event) => updateModule({ priority: Number(event.target.value) })} /></label>
-                  <label className="wide"><span>提示词内容</span><textarea value={activeModule.content} onChange={(event) => updateModule({ content: event.target.value })} rows={13} placeholder="支持 {{char}} 与 {{user}} 宏…" /></label>
-                </div>
+                {activeModule.marker ? (
+                  <div className="preset-module-grid">
+                    <label className="wide"><span>结构插槽</span><input value={MARKER_LABELS[activeModule.marker]} readOnly /></label>
+                    <label className="wide"><span>实际作用</span><textarea value={`生成时会在此处注入：${MARKER_LABELS[activeModule.marker]}。插槽本身不会作为文字发送给模型，也不会出现在回复中。`} rows={5} readOnly /></label>
+                  </div>
+                ) : (
+                  <div className="preset-module-grid">
+                    <label className="wide"><span>模块名称</span><input value={activeModule.name} onChange={(event) => updateModule({ name: event.target.value })} maxLength={160} /></label>
+                    <label><span>插入位置</span><select value={activeModule.position} onChange={(event) => updateModule({ position: event.target.value as PromptModule["position"] })}><option value="system">系统提示词</option><option value="post_history">历史消息之后</option></select></label>
+                    <label><span>消息角色</span><select value={activeModule.role ?? "system"} onChange={(event) => updateModule({ role: event.target.value as PromptModule["role"] })}><option value="system">System</option><option value="user">User</option><option value="assistant">Assistant</option></select></label>
+                    <label><span>优先级</span><input type="number" min={-1000} max={1000} value={activeModule.priority} onChange={(event) => updateModule({ priority: Number(event.target.value) })} /></label>
+                    <label className="wide"><span>提示词内容</span><textarea value={activeModule.content} onChange={(event) => updateModule({ content: event.target.value })} rows={13} placeholder="支持 {{char}} 与 {{user}} 宏…" /></label>
+                  </div>
+                )}
                 <label className="preset-module-toggle"><input type="checkbox" checked={activeModule.enabled} onChange={(event) => updateModule({ enabled: event.target.checked })} /><span><strong>启用此模块</strong><small>关闭后不会进入模型上下文，但内容会保留。</small></span></label>
               </div>
             )}

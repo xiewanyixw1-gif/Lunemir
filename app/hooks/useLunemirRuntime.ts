@@ -740,6 +740,8 @@ export function useLunemirRuntime() {
             useProbability: entry.useProbability ?? false,
             recursive_scanning: entry.recursive ?? false,
             token_budget: entry.tokenBudget ?? 0,
+            position: entry.insertionPosition === "before_character" ? 0 : entry.insertionPosition === "in_history" ? 4 : 1,
+            depth: entry.insertionDepth ?? 4,
             extensions: { ...entry.extensions, priority: entry.priority },
           })),
         } : undefined,
@@ -1782,6 +1784,8 @@ export function useLunemirRuntime() {
       useProbability: entry.useProbability ?? false,
       recursive_scanning: entry.recursive ?? false,
       token_budget: entry.tokenBudget ?? 0,
+      position: entry.insertionPosition === "before_character" ? 0 : entry.insertionPosition === "in_history" ? 4 : 1,
+      depth: entry.insertionDepth ?? 4,
       extensions: entry.extensions,
     }]));
     const payload = { ...lorebook.raw, name: lorebook.name, entries };
@@ -1943,8 +1947,8 @@ export function useLunemirRuntime() {
       return null;
     }
     const enabledModules = modules
-      .filter((module) => module.enabled && module.content)
-      .sort((left, right) => right.priority - left.priority || left.order - right.order);
+      .filter((module) => module.enabled && !module.marker && module.content)
+      .sort((left, right) => left.order - right.order || right.priority - left.priority);
     const preset: PresetRecord = existing
       ? {
           ...existing,
@@ -2025,14 +2029,15 @@ export function useLunemirRuntime() {
       role: module.role ?? "system",
       system_prompt: module.position === "system",
       lunemir_position: module.position,
-      marker: false,
+      marker: Boolean(module.marker),
+      ...(module.marker ? { identifier: module.marker } : {}),
       priority: module.priority,
     }));
     const payload = {
       ...preset.raw,
       name: preset.name,
       prompts,
-      prompt_order: [{ character_id: 100001, order: ordered.map((module) => ({ identifier: module.id, enabled: module.enabled })) }],
+      prompt_order: [{ character_id: 100001, order: ordered.map((module) => ({ identifier: module.marker ?? module.id, enabled: module.enabled })) }],
       ...(preset.modelPatch.temperature !== undefined ? { temperature: preset.modelPatch.temperature } : {}),
       ...(preset.modelPatch.maxTokens !== undefined ? { openai_max_tokens: preset.modelPatch.maxTokens } : {}),
       ...(preset.modelPatch.contextLimit !== undefined ? { openai_max_context: preset.modelPatch.contextLimit } : {}),

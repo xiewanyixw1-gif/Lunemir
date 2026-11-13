@@ -1,5 +1,5 @@
 import { createId } from "./defaults";
-import type { CharacterRecord, ImportPreview, LorebookEntry } from "./types";
+import type { CharacterRecord, ImportPreview, LorebookEntry, LorebookInsertionPosition } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -23,6 +23,12 @@ function asNumber(value: unknown, fallback: number) {
 
 function firstText(...values: unknown[]) {
   return values.map(asString).find((value) => value.trim()) ?? "";
+}
+
+function normalizeLorebookPosition(value: unknown): LorebookInsertionPosition {
+  if (value === 0 || value === "0" || value === "before" || value === "before_character") return "before_character";
+  if (value === 4 || value === "4" || value === "at_depth" || value === "in_history") return "in_history";
+  return "after_character";
 }
 
 export function readCharacterGreetings(rawValue: unknown) {
@@ -63,7 +69,7 @@ export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
       enabled: source.enabled !== false && source.disable !== true,
       constant: source.constant === true,
       selective: source.selective === true,
-      priority: asNumber(source.priority, defaultPriority),
+      priority: asNumber(source.priority ?? entryExtensions.priority, defaultPriority),
       insertionOrder: asNumber(source.insertion_order, order),
       caseSensitive: source.case_sensitive === true || source.caseSensitive === true,
       scanDepth: asNumber(source.scan_depth ?? entryExtensions.scan_depth, 12),
@@ -71,6 +77,8 @@ export function normalizeLorebookEntries(rawEntries: unknown): LorebookEntry[] {
       useProbability: source.useProbability === true || source.use_probability === true || entryExtensions.useProbability === true,
       recursive: source.recursive === true || source.recursive_scanning === true || entryExtensions.recursive === true,
       tokenBudget: asNumber(source.token_budget ?? entryExtensions.token_budget, 0),
+      insertionPosition: normalizeLorebookPosition(source.position ?? source.insertion_position ?? entryExtensions.position),
+      insertionDepth: asNumber(source.depth ?? source.insertion_depth ?? entryExtensions.depth, 4),
       extensions: entryExtensions,
     };
   });

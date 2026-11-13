@@ -20,6 +20,8 @@ Lunemir 是一个本地优先、可高度美化的 AI 角色互动空间。项�
 - 预设级安全 Markdown、小剧场卡片、Regex 美化规则与原文切换
 - 预设原生 HTML/CSS 优先的隔离渲染：静态模板使用 Shadow DOM，含交互脚本的小剧场使用无同源、无接口权限的 sandbox iframe
 - 高级预设兼容：保留 System/User/Assistant 模块角色、Regex 消息深度，并将隔离小剧场的行动选项安全回填到聊天输入框
+- 保留聊天预设的角色、人设、世界书、示例对话与聊天历史结构插槽，并严格按照原始 Prompt Order 编排
+- 世界书支持 Before Character、After Character 与 At Depth 注入位置及历史深度
 - 未提供自定义模板时回退到 Lunemir 原生状态栏与剧情组件
 - 多用户人设新建、编辑、复制、头像与安全删除
 - 每个剧情独立绑定人设，切换会话时自动恢复并注入完整上下文

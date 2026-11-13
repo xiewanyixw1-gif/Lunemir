@@ -32,6 +32,8 @@ function createEmptyEntry(index: number): LorebookEntry {
     useProbability: false,
     recursive: false,
     tokenBudget: 0,
+    insertionPosition: "after_character",
+    insertionDepth: 4,
     extensions: {},
   };
 }
@@ -50,6 +52,8 @@ function cloneEntries(entries: LorebookEntry[]) {
     useProbability: entry.useProbability ?? false,
     recursive: entry.recursive ?? false,
     tokenBudget: entry.tokenBudget ?? 0,
+    insertionPosition: entry.insertionPosition ?? "after_character",
+    insertionDepth: entry.insertionDepth ?? 4,
     extensions: { ...entry.extensions },
   }));
 }
@@ -198,6 +202,8 @@ export function LorebookEditorModal({ lorebook, onClose, onSave, onDuplicate, on
                   <label><span>扫描深度</span><input type="number" min={1} max={100} value={activeEntry.scanDepth ?? 12} onChange={(event) => updateEntry({ scanDepth: Number(event.target.value) })} /><small>只扫描最近多少条消息</small></label>
                   <label><span>触发概率 %</span><input type="number" min={0} max={100} value={activeEntry.probability ?? 100} onChange={(event) => updateEntry({ probability: Number(event.target.value) })} disabled={!activeEntry.useProbability} /><small>同一段上下文结果保持稳定</small></label>
                   <label><span>条目 Token 预算</span><input type="number" min={0} max={32000} value={activeEntry.tokenBudget ?? 0} onChange={(event) => updateEntry({ tokenBudget: Number(event.target.value) })} /><small>0 表示不限制</small></label>
+                  <label><span>注入位置</span><select value={activeEntry.insertionPosition ?? "after_character"} onChange={(event) => updateEntry({ insertionPosition: event.target.value as LorebookEntry["insertionPosition"] })}><option value="before_character">角色定义之前</option><option value="after_character">角色定义之后</option><option value="in_history">聊天历史中</option></select><small>兼容世界书 Before / After / At Depth</small></label>
+                  <label><span>历史注入深度</span><input type="number" min={0} max={100} value={activeEntry.insertionDepth ?? 4} onChange={(event) => updateEntry({ insertionDepth: Number(event.target.value) })} disabled={activeEntry.insertionPosition !== "in_history"} /><small>0 表示最近一条消息之后</small></label>
                 </div>
 
                 <div className="lorebook-switches">

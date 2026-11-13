@@ -1,9 +1,20 @@
 import { normalizeCharacterCard, normalizeLorebookEntries, parseCharacterFile } from "./character-import";
 import { createId } from "./defaults";
 import { normalizeImportedOutputRenderer, normalizeImportedPromptFilters } from "./output-renderer";
-import type { ContentImportPreview, LorebookRecord, PresetRecord, PromptModule } from "./types";
+import type { ContentImportPreview, LorebookRecord, PresetPromptMarker, PresetRecord, PromptModule } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
+
+const PRESET_MARKERS = new Set<PresetPromptMarker>([
+  "personaDescription",
+  "worldInfoBefore",
+  "charDescription",
+  "charPersonality",
+  "worldInfoAfter",
+  "scenario",
+  "dialogueExamples",
+  "chatHistory",
+]);
 
 function asRecord(value: unknown): UnknownRecord {
   return value && typeof value === "object" && !Array.isArray(value) ? value as UnknownRecord : {};
@@ -63,11 +74,17 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
     order: index,
   }]));
   const modules = prompts
-    .filter((prompt) => prompt.marker !== true && asString(prompt.content).trim())
+    .filter((prompt) => {
+      const identifier = asString(prompt.identifier) as PresetPromptMarker;
+      return asString(prompt.content).trim() || (prompt.marker === true && PRESET_MARKERS.has(identifier));
+    })
     .map((prompt, index) => {
       const identifier = asString(prompt.identifier);
       const orderEntry = orderByIdentifier.get(identifier);
       const importedRole = asString(prompt.role);
+      const marker = prompt.marker === true && PRESET_MARKERS.has(identifier as PresetPromptMarker)
+        ? identifier as PresetPromptMarker
+        : undefined;
       return {
         id: identifier ? `${identifier}_${index}` : createId("prompt"),
         name: asString(prompt.name) || identifier || `提示词 ${index + 1}`,
@@ -79,16 +96,17 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
         role: (importedRole === "user" || importedRole === "assistant" ? importedRole : "system") as PromptModule["role"],
         priority: asNumber(prompt.priority) ?? 0,
         order: orderEntry?.order ?? orderEntries.length + index,
+        ...(marker ? { marker } : {}),
       };
     })
     .sort((left, right) => left.order - right.order);
   const enabledPrompts = modules.filter((module) => module.enabled);
   const postHistoryInstructions = enabledPrompts
-    .filter((module) => module.position === "post_history" && module.role === "system")
+    .filter((module) => !module.marker && module.position === "post_history" && module.role === "system")
     .map((module) => module.content)
     .join("\n\n");
   const systemPrompt = enabledPrompts
-    .filter((module) => module.position === "system" && module.role === "system")
+    .filter((module) => !module.marker && module.position === "system" && module.role === "system")
     .map((module) => module.content)
     .join("\n\n");
   const temperature = asNumber(raw.temperature);

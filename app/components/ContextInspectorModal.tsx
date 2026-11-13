@@ -45,7 +45,7 @@ export function ContextInspectorModal({ report, presetName, onClose }: Inspector
             <section>
               <div className="context-inspector-section-title"><strong>启用的预设模块</strong><span>{report.presetModules.length}</span></div>
               {report.presetModules.length > 0 ? report.presetModules.map((module) => (
-                <article key={module.id}><i>{module.position === "system" ? "S" : "P"}</i><span><strong>{module.name}</strong><small>{module.position === "system" ? "System" : "Post-History"} · 优先级 {module.priority}</small></span><b>{module.estimatedTokens} t</b></article>
+                <article key={module.id}><i>{module.marker ? "M" : module.position === "system" ? "S" : "P"}</i><span><strong>{module.name}</strong><small>{module.marker ? `结构插槽 · ${module.marker}` : `${module.position === "system" ? "System" : "Post-History"} · 优先级 ${module.priority}`}</small></span><b>{module.estimatedTokens} t</b></article>
               )) : <p>当前没有启用预设模块。</p>}
             </section>
             <section>

@@ -7,6 +7,7 @@ import type {
   MatchedLore,
   ModelMessage,
   PersonaRecord,
+  PromptModule,
   PresetRecord,
   StoredMessage,
   StoryEvent,
@@ -15,6 +16,7 @@ import type {
 } from "./types";
 import { replaceRandomMacros, replaceRoleMacros } from "./macros";
 import { applyPromptFilters, normalizeOutputRenderer, presetUsesCustomPresentation, resolveOutputRendererConfig } from "./output-renderer";
+import { restorePresetStructureMarkers } from "./preset";
 
 export type ContextOptions = {
   persona?: PersonaRecord | null;
@@ -33,10 +35,15 @@ export function estimateTokens(text: string) {
   return Math.max(1, Math.ceil(cjk * 1.15 + other / 4));
 }
 
-export function resolvePresetPrompts(preset?: PresetRecord | null) {
+export function resolvePresetPrompts(preset?: PresetRecord | null): {
+  systemPrompt: string;
+  postHistoryInstructions: string;
+  activeModuleCount: number;
+  activeModules: PromptModule[];
+} {
   if (!preset) return { systemPrompt: "", postHistoryInstructions: "", activeModuleCount: 0, activeModules: [] };
   if (!Array.isArray(preset.modules)) {
-    const activeModules = [
+    const activeModules: PromptModule[] = [
       ...(preset.systemPrompt.trim() ? [{ id: "legacy-system", name: "System Prompt", content: preset.systemPrompt, enabled: true, position: "system" as const, role: "system" as const, priority: 100, order: 0 }] : []),
       ...(preset.postHistoryInstructions.trim() ? [{ id: "legacy-post-history", name: "Post-History Instructions", content: preset.postHistoryInstructions, enabled: true, position: "post_history" as const, role: "system" as const, priority: 100, order: 1 }] : []),
     ];
@@ -47,12 +54,12 @@ export function resolvePresetPrompts(preset?: PresetRecord | null) {
       activeModules,
     };
   }
-  const activeModules = preset.modules
-    .filter((module) => module.enabled && module.content.trim())
-    .sort((left, right) => right.priority - left.priority || left.order - right.order);
+  const activeModules = restorePresetStructureMarkers(preset)
+    .filter((module) => module.enabled && (module.marker || module.content.trim()))
+    .sort((left, right) => left.order - right.order || right.priority - left.priority);
   return {
-    systemPrompt: activeModules.filter((module) => module.position === "system" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
-    postHistoryInstructions: activeModules.filter((module) => module.position === "post_history" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
+    systemPrompt: activeModules.filter((module) => !module.marker && module.position === "system" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
+    postHistoryInstructions: activeModules.filter((module) => !module.marker && module.position === "post_history" && (module.role ?? "system") === "system").map((module) => module.content).join("\n\n"),
     activeModuleCount: activeModules.length,
     activeModules,
   };
@@ -137,13 +144,24 @@ export function compileContext(
   }).join("\n");
   const allLoreEntries = [...character.lorebookEntries, ...(options.externalLoreEntries ?? [])];
   const matchedLore = matchesLore(allLoreEntries, messages.map((message) => replaceMacros(message.content)), phoneText);
-  const characterDefinition = [
+  const formatLore = (entries: MatchedLore[]) => entries
+    .map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`)
+    .join("\n\n");
+  const loreBefore = matchedLore.filter(({ entry }) => entry.insertionPosition === "before_character");
+  const loreInHistory = matchedLore.filter(({ entry }) => entry.insertionPosition === "in_history");
+  const loreAfter = matchedLore.filter(({ entry }) => entry.insertionPosition !== "before_character" && entry.insertionPosition !== "in_history");
+  const loreBeforeText = formatLore(loreBefore);
+  const loreAfterText = formatLore(loreAfter);
+  const loreText = formatLore(matchedLore);
+  const characterDescription = [
     `你正在扮演 ${character.name}。`,
     character.description,
-    character.personality && `性格：${character.personality}`,
-    character.scenario && `当前场景：${character.scenario}`,
     character.systemPrompt,
   ].filter(Boolean).map(replaceMacros).join("\n\n");
+  const characterPersonality = character.personality ? replaceMacros(`性格：${character.personality}`) : "";
+  const scenarioText = character.scenario ? replaceMacros(`当前场景：${character.scenario}`) : "";
+  const dialogueExamples = replaceMacros(character.exampleMessages);
+  const characterDefinition = [characterDescription, characterPersonality, scenarioText].filter(Boolean).join("\n\n");
   const personaDefinition = persona
     ? [
         `与您互动的用户人设是 ${persona.name}。`,
@@ -162,12 +180,11 @@ export function compileContext(
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
   const presetRoleMessages = resolvedPreset.activeModules
-    .filter((module) => module.position === "system" && (module.role ?? "system") !== "system")
+    .filter((module) => !module.marker && module.position === "system" && (module.role ?? "system") !== "system")
     .map((module) => ({ role: module.role as "user" | "assistant", content: replaceMacros(module.content) }));
   const presetPostRoleMessages = resolvedPreset.activeModules
-    .filter((module) => module.position === "post_history" && (module.role ?? "system") !== "system")
+    .filter((module) => !module.marker && module.position === "post_history" && (module.role ?? "system") !== "system")
     .map((module) => ({ role: module.role as "user" | "assistant", content: replaceMacros(module.content) }));
-  const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const resolvedOutputRenderer = resolveOutputRendererConfig(
     preset?.outputRenderer,
     character.extensions,
@@ -222,7 +239,7 @@ export function compileContext(
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, outputProtocol, snowTheaterProtocol, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
+  const systemContent = [presetPrompt, outputProtocol, snowTheaterProtocol, loreBeforeText && `角色定义之前的世界设定：\n${loreBeforeText}`, characterDefinition, loreAfterText && `角色定义之后的世界设定：\n${loreAfterText}`, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
     .filter(Boolean)
     .join("\n\n---\n\n");
   const coveredMessageCount = summaryText ? Math.min(messages.length, options.storySummary?.coveredMessageCount ?? 0) : 0;
@@ -256,7 +273,7 @@ export function compileContext(
       detail: persona?.name ?? "用户",
       estimatedTokens: estimateTokens(personaDefinition),
     }] : []),
-    ...(presetPrompt || presetPostHistory ? [{
+    ...(resolvedPreset.activeModuleCount > 0 ? [{
       id: "preset",
       label: "提示词预设",
       detail: `${preset?.name ?? "Preset"} · ${resolvedPreset.activeModuleCount} 个模块`,
@@ -306,18 +323,92 @@ export function compileContext(
     },
   ];
 
-  const historyMessages: ModelMessage[] = historySource.map((message) => ({ role: message.role, content: replaceMacros(message.content) }));
-  if (authorNoteText && options.authorNote?.position === "in_history") {
-    const insertionIndex = Math.max(0, historyMessages.length - Math.max(0, options.authorNote.depth));
-    historyMessages.splice(insertionIndex, 0, { role: "system", content: `作者注释：\n${authorNoteText}` });
-  }
-  const modelMessages: ModelMessage[] = [
-    { role: "system", content: systemContent },
-    ...presetRoleMessages,
-    ...historyMessages,
-    ...(postHistory ? [{ role: "system" as const, content: postHistory }] : []),
-    ...presetPostRoleMessages,
+  const baseHistoryMessages: ModelMessage[] = historySource.map((message) => ({ role: message.role, content: replaceMacros(message.content) }));
+  const historyInjections = [
+    ...loreInHistory.map(({ entry, content }) => ({
+      depth: Math.max(0, entry.insertionDepth ?? 4),
+      order: entry.insertionOrder,
+      content: `世界书 · ${entry.name}：\n${replaceMacros(content)}`,
+    })),
+    ...(authorNoteText && options.authorNote?.position === "in_history" ? [{
+      depth: Math.max(0, options.authorNote.depth),
+      order: Number.MAX_SAFE_INTEGER,
+      content: `作者注释：\n${authorNoteText}`,
+    }] : []),
   ];
+  const injectionsByIndex = new Map<number, typeof historyInjections>();
+  historyInjections.forEach((injection) => {
+    const index = Math.max(0, baseHistoryMessages.length - injection.depth);
+    injectionsByIndex.set(index, [...(injectionsByIndex.get(index) ?? []), injection]);
+  });
+  const historyMessages: ModelMessage[] = [];
+  for (let index = 0; index <= baseHistoryMessages.length; index += 1) {
+    const injections = injectionsByIndex.get(index)?.sort((left, right) => left.order - right.order) ?? [];
+    injections.forEach((injection) => historyMessages.push({ role: "system", content: injection.content }));
+    if (index < baseHistoryMessages.length) historyMessages.push(baseHistoryMessages[index]);
+  }
+
+  const restoredPresetModules = restorePresetStructureMarkers(preset);
+  const usesPromptMarkers = restoredPresetModules.some((module) => module.marker);
+  let modelMessages: ModelMessage[];
+  if (usesPromptMarkers) {
+    const declaredMarkers = new Set(restoredPresetModules.flatMap((module) => module.marker ? [module.marker] : []));
+    const markerContent = {
+      personaDescription: personaDefinition,
+      worldInfoBefore: loreBeforeText,
+      charDescription: characterDescription,
+      charPersonality: characterPersonality,
+      worldInfoAfter: loreAfterText,
+      scenario: scenarioText,
+      dialogueExamples,
+    };
+    const runtimeContext = [
+      outputProtocol,
+      snowTheaterProtocol,
+      !declaredMarkers.has("personaDescription") ? personaDefinition : "",
+      !declaredMarkers.has("worldInfoBefore") ? loreBeforeText : "",
+      !declaredMarkers.has("charDescription") ? characterDescription : "",
+      !declaredMarkers.has("charPersonality") ? characterPersonality : "",
+      !declaredMarkers.has("worldInfoAfter") ? loreAfterText : "",
+      !declaredMarkers.has("scenario") ? scenarioText : "",
+      !declaredMarkers.has("dialogueExamples") ? dialogueExamples : "",
+      storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`,
+      summaryText && `已经确认的剧情摘要：\n${summaryText}`,
+      memoryText && `已经确认的长期记忆：\n${memoryText}`,
+      phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`,
+      options.authorNote?.position === "system" && authorNoteText ? `作者注释：\n${authorNoteText}` : "",
+    ].filter(Boolean).join("\n\n---\n\n");
+    modelMessages = runtimeContext ? [{ role: "system", content: runtimeContext }] : [];
+    let insertedHistory = false;
+    resolvedPreset.activeModules.forEach((module) => {
+      if (module.marker === "chatHistory") {
+        modelMessages.push(...historyMessages);
+        insertedHistory = true;
+        return;
+      }
+      if (module.marker) {
+        const content = markerContent[module.marker as keyof typeof markerContent];
+        if (content) modelMessages.push({ role: "system", content });
+        return;
+      }
+      const content = replaceMacros(module.content);
+      if (content.trim()) modelMessages.push({ role: module.role ?? "system", content });
+    });
+    if (!declaredMarkers.has("chatHistory") && !insertedHistory) modelMessages.push(...historyMessages);
+    const characterPostHistory = [
+      character.postHistoryInstructions,
+      options.authorNote?.position === "post_history" ? authorNoteText : "",
+    ].filter(Boolean).map((value) => replaceMacros(value ?? "")).join("\n\n");
+    if (characterPostHistory) modelMessages.push({ role: "system", content: characterPostHistory });
+  } else {
+    modelMessages = [
+      { role: "system", content: systemContent },
+      ...presetRoleMessages,
+      ...historyMessages,
+      ...(postHistory ? [{ role: "system" as const, content: postHistory }] : []),
+      ...presetPostRoleMessages,
+    ];
+  }
   const estimatedTokens = modelMessages.reduce((total, message) => total + estimateTokens(message.content), 0);
   const promptMessages = modelMessages.map((message, index) => ({
     id: `${message.role}-${index}`,
@@ -358,6 +449,7 @@ export function compileContext(
         id: module.id,
         name: module.name,
         position: module.position,
+        marker: module.marker,
         priority: module.priority,
         estimatedTokens: estimateTokens(replaceMacros(module.content)),
       })),

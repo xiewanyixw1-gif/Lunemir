@@ -657,6 +657,37 @@ test("preserves advanced preset roles, depth limits, and unlabeled HTML output",
   assert.match(prototype, /handlePresetAction/);
 });
 
+test("preserves preset structure markers and worldbook insertion positions", async () => {
+  const [types, importer, characterImporter, context, presetLogic, presetEditor, lorebookEditor, runtime] = await Promise.all([
+    readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/content-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/character-import.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/context.ts", root), "utf8"),
+    readFile(new URL("lib/lunemir/preset.ts", root), "utf8"),
+    readFile(new URL("app/components/PresetEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/components/LorebookEditorModal.tsx", root), "utf8"),
+    readFile(new URL("app/hooks/useLunemirRuntime.ts", root), "utf8"),
+  ]);
+
+  assert.match(types, /export type PresetPromptMarker/);
+  assert.match(types, /"chatHistory"/);
+  assert.match(types, /LorebookInsertionPosition/);
+  assert.match(importer, /PRESET_MARKERS/);
+  assert.match(importer, /prompt\.marker === true/);
+  assert.match(characterImporter, /normalizeLorebookPosition/);
+  assert.match(context, /usesPromptMarkers/);
+  assert.match(context, /marker === "chatHistory"/);
+  assert.match(context, /injectionsByIndex/);
+  assert.match(context, /left\.order - right\.order \|\| right\.priority - left\.priority/);
+  assert.match(presetLogic, /restorePresetStructureMarkers/);
+  assert.match(presetLogic, /preset\.raw\?\.prompt_order/);
+  assert.match(presetEditor, /restorePresetStructureMarkers/);
+  assert.match(presetEditor, /结构插槽/);
+  assert.match(lorebookEditor, /聊天历史中/);
+  assert.match(runtime, /module\.marker \?\? module\.id/);
+  assert.match(runtime, /insertionPosition === "in_history" \? 4/);
+});
+
 test("prioritizes character-card renderers without corrupting story paragraphs", async () => {
   const [types, importer, renderer, context, prototype, editor, component, styles] = await Promise.all([
     readFile(new URL("lib/lunemir/types.ts", root), "utf8"),
