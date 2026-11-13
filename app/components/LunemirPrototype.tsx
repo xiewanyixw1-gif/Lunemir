@@ -385,10 +385,27 @@ export function LunemirPrototype() {
   }
 
   useEffect(() => {
-    if (section !== "chat" || !followOutputRef.current) return;
+    followOutputRef.current = true;
+  }, [runtime.activeConversation?.id]);
+
+  useEffect(() => {
+    if (section !== "chat") return;
     const messageList = messageListRef.current;
     if (!messageList) return;
-    messageList.scrollTo({ top: messageList.scrollHeight, behavior: runtime.streaming ? "auto" : "smooth" });
+    const distanceFromLatest = messageList.scrollHeight - messageList.scrollTop - messageList.clientHeight;
+    const nearLatest = distanceFromLatest < 140;
+    if (runtime.streaming) {
+      // Keep the reading viewport fixed while tokens arrive. The user can
+      // explicitly jump once, but a later token must not pull the page again.
+      followOutputRef.current = false;
+      setShowJumpToLatest(!nearLatest);
+      return;
+    }
+    if (!followOutputRef.current) {
+      setShowJumpToLatest(!nearLatest);
+      return;
+    }
+    messageList.scrollTo({ top: messageList.scrollHeight, behavior: "smooth" });
     setShowJumpToLatest(false);
   }, [runtime.messages.length, lastMessageContent, runtime.streaming, section]);
 

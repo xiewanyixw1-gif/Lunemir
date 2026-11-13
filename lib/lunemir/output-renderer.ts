@@ -371,13 +371,15 @@ function stripNativeFallbackSections(value: string) {
 function normalizeSafeHtml(value: string, preservePresetComponents = false) {
   let output = normalizeBracketWidgets(value)
     .replace(/<!--[\s\S]*?-->/g, "")
-    .replace(/<(script|iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
-    .replace(/<(script|iframe|object|embed|svg|math|link|meta)\b[^>]*\/?\s*>/gi, "")
+    .replace(/<(iframe|object|embed|svg|math)\b[^>]*>[\s\S]*?<\/\1\s*>/gi, "")
+    .replace(/<(iframe|object|embed|svg|math|link|meta)\b[^>]*\/?\s*>/gi, "")
     .replace(/<lunemir-theater\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-theater\s*>/gi, "<details open><summary>$1</summary>$2</details>")
     .replace(/<lunemir-status\b[^>]*?(?:title=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-status\s*>/gi, "\n:::status $1\n$2\n:::\n")
     .replace(/<lunemir-widget\b[^>]*?(?:type=["']([^"']*)["'])?[^>]*>([\s\S]*?)<\/lunemir-widget\s*>/gi, "\n:::widget $1\n$2\n:::\n");
   if (!preservePresetComponents) {
     output = output
+      .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
+      .replace(/<script\b[^>]*\/?\s*>/gi, "")
       .replace(/<(status(?:-?block|-?bar)?|character-status)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::status 当前状态\n$2\n:::\n")
       .replace(/<(widget(?:-?block)?|story-widget)\b[^>]*>([\s\S]*?)<\/\1\s*>/gi, "\n:::widget 剧情组件\n$2\n:::\n");
   } else if (/<style\b|\bclass\s*=|\bid\s*=|<\/?(?:content|statusbar|[a-z][\w]*-[\w-]+)\b/i.test(output)) {

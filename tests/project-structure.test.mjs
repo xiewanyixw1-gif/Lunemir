@@ -312,7 +312,7 @@ test("supports alternate opening selection and an immersive compact chat", async
   assert.match(styles, /data-glass-mode="messages"/);
 });
 
-test("renders preset HTML and CSS in an isolated layer without executing imported code", async () => {
+test("renders preset HTML and interactive theater code in isolated layers", async () => {
   const [renderer, component, editor, runtime, importer, prototype, context] = await Promise.all([
     readFile(new URL("lib/lunemir/output-renderer.ts", root), "utf8"),
     readFile(new URL("app/components/SafeMessageContent.tsx", root), "utf8"),
@@ -327,7 +327,8 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(renderer, /applyPromptFilters/);
   assert.match(renderer, /promptOnly/);
   assert.match(renderer, /likelyUnsafeRegex/);
-  assert.match(renderer, /script\|iframe\|object\|embed/);
+  assert.match(renderer, /iframe\|object\|embed/);
+  assert.match(renderer, /if \(!preservePresetComponents\)/);
   assert.match(renderer, /presetUsesCustomPresentation/);
   assert.match(renderer, /hasCssTemplate/);
   assert.match(renderer, /style\|content\|div/);
@@ -335,6 +336,9 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(component, /SAFE_HTML_TAGS/);
   assert.match(component, /new DOMParser/);
   assert.match(component, /attachShadow/);
+  assert.match(component, /sandbox="allow-scripts"/);
+  assert.match(component, /connect-src 'none'/);
+  assert.match(component, /event\.source !== iframeRef\.current\?\.contentWindow/);
   assert.match(component, /sanitizePresetCss/);
   assert.match(component, /replace\(\/url/);
   assert.match(component, /safeHref/);
@@ -348,6 +352,7 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(component, /正在\|正为你/);
   assert.match(component, /rendering\|loading\|generating/);
   assert.match(component, /extractMessageStatus/);
+  assert.doesNotMatch(component, /statusRowsFromText\(parsed\.body\.textContent/);
   assert.match(component, /data-lunemir-status-compat/);
   assert.match(component, /script\[type=\"application\/json\"\]/);
   assert.doesNotMatch(component, /PresetCompatibilityContext/);

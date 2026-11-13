@@ -267,7 +267,61 @@ function appendSanitizedPresetNode(
   parent.appendChild(target);
 }
 
-function IsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
+function SandboxedPresetHtml({ content }: { content: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [height, setHeight] = useState(180);
+  const sourceDocument = useMemo(() => `<!doctype html>
+<html><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: blob: https:; media-src data: blob: https:; font-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; form-action 'none'; base-uri 'none';">
+<style>html,body{margin:0;min-width:0;background:transparent;color:inherit;overflow:hidden}*{box-sizing:border-box;max-width:100%}body{font-family:Inter,'Noto Sans SC',system-ui,sans-serif}</style>
+</head><body>
+${content}
+<script>
+(() => {
+  const sendSize = () => {
+    const root = document.documentElement;
+    const body = document.body;
+    const height = Math.max(root.scrollHeight, root.offsetHeight, body ? body.scrollHeight : 0, body ? body.offsetHeight : 0);
+    parent.postMessage({ type: 'lunemir-preset-height', height }, '*');
+  };
+  addEventListener('load', sendSize);
+  addEventListener('resize', sendSize);
+  document.addEventListener('click', () => setTimeout(sendSize, 0), true);
+  new MutationObserver(sendSize).observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+  if ('ResizeObserver' in window) new ResizeObserver(sendSize).observe(document.documentElement);
+  requestAnimationFrame(sendSize);
+  setTimeout(sendSize, 80);
+})();
+</script>
+</body></html>`, [content]);
+
+  useEffect(() => {
+    function receiveSize(event: MessageEvent) {
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data as { type?: unknown; height?: unknown } | null;
+      if (!data || data.type !== "lunemir-preset-height" || typeof data.height !== "number") return;
+      setHeight(Math.min(6_000, Math.max(80, Math.ceil(data.height))));
+    }
+    window.addEventListener("message", receiveSize);
+    return () => window.removeEventListener("message", receiveSize);
+  }, []);
+
+  return (
+    <iframe
+      className="preset-html-frame"
+      ref={iframeRef}
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      title="交互式剧情组件"
+      srcDoc={sourceDocument}
+      style={{ height }}
+    />
+  );
+}
+
+function StaticIsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
   const hostRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const host = hostRef.current;
@@ -303,6 +357,13 @@ function IsolatedPresetHtml({ content, statusSource = content }: { content: stri
     shadow.append(style, root);
   }, [content, statusSource]);
   return <div className="preset-html-sandbox" ref={hostRef} data-render-mode="isolated-preset" />;
+}
+
+function IsolatedPresetHtml({ content, statusSource = content }: { content: string; statusSource?: string }) {
+  const needsInteractiveSandbox = /<script\b|\son[a-z]+\s*=|\bhref\s*=\s*["']javascript:/i.test(content);
+  return needsInteractiveSandbox
+    ? <SandboxedPresetHtml content={content} />
+    : <StaticIsolatedPresetHtml content={content} statusSource={statusSource} />;
 }
 
 function RichBlocks({ content, isolatedHtml = true, statusSource = content }: { content: string; isolatedHtml?: boolean; statusSource?: string }) {
@@ -532,11 +593,22 @@ const STATUS_LABELS = new Set([
   "关系", "好感", "场景", "观察", "心声", "画面", "动态", "剧情", "健康",
 ]);
 
+const STATUS_NARRATIVE_LABELS = new Set(["story", "plot", "content", "body", "\u5267\u60c5", "\u6b63\u6587"]);
+
+function compactStatusValue(value: string) {
+  const markerIndex = value.search(/\[\/?(?:UI_PANEL|STATUS_PANEL|MEMORY_PANEL)\]|<\/?(?:content|snow)\b|(?:^|\n)\s*:::/i);
+  const bounded = (markerIndex >= 0 ? value.slice(0, markerIndex) : value)
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!bounded) return "";
+  return bounded.length > 220 ? `${bounded.slice(0, 217).trimEnd()}\u2026` : bounded;
+}
+
 function statusRowsFromText(value: string, explicit = false) {
   const rows = parseWidgetRows(value)
-    .map((row) => ({ label: row.label.trim().slice(0, 32), value: row.value.trim().slice(0, 2_000) }))
-    .filter((row) => row.value && STATUS_LABELS.has(row.label));
-  return rows.length >= (explicit ? 1 : 2) ? rows.slice(0, 16) : [];
+    .map((row) => ({ label: row.label.trim().slice(0, 32), value: compactStatusValue(row.value) }))
+    .filter((row) => row.value && STATUS_LABELS.has(row.label) && !STATUS_NARRATIVE_LABELS.has(row.label.toLocaleLowerCase()));
+  return rows.length >= (explicit ? 1 : 2) ? rows.slice(0, 10) : [];
 }
 
 function statusValue(value: unknown): string {
@@ -550,15 +622,16 @@ function statusRowsFromJson(value: unknown, depth = 0): WidgetRow[] {
   const rows: WidgetRow[] = [];
   Object.entries(value as Record<string, unknown>).forEach(([key, item]) => {
     const parsed = parseWidgetRows(`${key}: ${statusValue(item)}`)[0];
-    if (parsed && STATUS_LABELS.has(parsed.label) && parsed.value) {
-      rows.push({ label: parsed.label, value: parsed.value.slice(0, 2_000) });
+    const compactValue = parsed ? compactStatusValue(parsed.value) : "";
+    if (parsed && STATUS_LABELS.has(parsed.label) && !STATUS_NARRATIVE_LABELS.has(parsed.label.toLocaleLowerCase()) && compactValue) {
+      rows.push({ label: parsed.label, value: compactValue });
       return;
     }
     if (/^(?:status|state|characterStatus|character_status|statusData|status_data|data|details)$/i.test(key)) {
       rows.push(...statusRowsFromJson(item, depth + 1));
     }
   });
-  return rows.slice(0, 16);
+  return rows.slice(0, 10);
 }
 
 function statusTitle(element?: Element | null) {
@@ -611,13 +684,15 @@ function extractMessageStatus(source: string): MessageStatusPayload | null {
     }
   }
 
-  parsed.querySelectorAll("style, script").forEach((element) => element.remove());
-  const compactRows = statusRowsFromText(parsed.body.textContent ?? "");
-  return compactRows.length > 0 ? { title: "当前状态", rows: compactRows } : null;
+  // Never infer a status panel from the whole reply. Narrative text often
+  // contains words such as time, place, mood, or story; treating those as
+  // fields is what previously swallowed an entire reply into one huge card.
+  return null;
 }
 
 function NativeWidget({ section }: { section: TheaterSection }) {
-  const rows = parseWidgetRows(section.content);
+  const rows = section.type === "status" ? statusRowsFromText(section.content, true) : parseWidgetRows(section.content);
+  if (section.type === "status" && rows.length === 0) return null;
   const title = section.title || (section.type === "status" ? "当前状态" : "剧情组件");
   return (
     <section className={`native-widget native-widget--${section.type}`} data-widget-title={title}>

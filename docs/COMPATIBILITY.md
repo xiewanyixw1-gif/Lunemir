@@ -42,11 +42,11 @@ v0.2 支持：
 
 接口必须允许部署域名进行 CORS 跨域访问。部分只实现聊天或生图、未实现 `/models` 的兼容服务可能无法通过“测试连接”，但仍可手动填写模型 ID 后发起生成。
 
-角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。角色卡或预设自带的 `<style>`、裸 CSS 选择器、`<content>`、class 与状态栏 UI 会进入单条消息的 Shadow DOM 隔离层，CSS 不会影响 Lunemir 外壳；HTML 即使位于 Markdown 代码围栏中也会作为隔离 UI 渲染，而不是把源码铺进正文。角色卡规则优先于预设，检测到专属模板后不会再显示 Lunemir 原生状态栏。脚本、表单、媒体、外链资源、事件属性、远程 URL 与可能覆盖页面的固定定位不会执行。
+角色回复支持安全 HTML 白名单渲染，包括常用文本标签、列表、表格、`details`、Ruby 注音、链接和受限内联样式。静态角色卡/预设模板使用 Shadow DOM 隔离；含 `<script>` 或事件属性的状态栏与小剧场使用独立 sandbox iframe，保留标签切换、展开和按钮动效。iframe 没有同源权限，禁止表单提交、网络 API、嵌套页面与访问 Lunemir 主界面；容器高度通过受限 `postMessage` 自适应。角色卡规则优先于预设，检测到专属模板后不会再显示 Lunemir 原生状态栏。
 
 如果模型误把角色卡附带的大段 CSS 当作回复正文，显示层只会剥离明确识别出的完整样式源码；正常小说段落、空行、对话和 `<content>` 正文区域仍按原顺序保留。消息原文不会被改写，仍可通过“查看原文”检查。
 
-混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。带 Regex replacement 的预设只要求模型返回动态字段，由 replacement 负责生成外壳；只有提示词模板、没有可复用 Regex 的预设则允许模型按模板返回一次完整 HTML/CSS。依赖 JavaScript 的 HTML 不会执行。只包含“正在渲染回忆/加载组件”等文案的节点被视为旧状态栏加载占位框：显示层只从同一条 AI 回复的 `<status>`、状态键值、`data-*` 字段或 `application/json` 中读取角色状态并生成静态状态栏，不读取长期记忆或剧情摘要。当前回复没有可确认的状态字段时会直接移除空框，静态正文和已经生成的状态内容保持原顺序。
+混合输出会把围栏外的 Markdown/小说正文与带标题的 HTML 代码围栏分开渲染；旧预设使用的 `[UI_PANEL]...[/UI_PANEL]` 与 `[MEMORY_PANEL]...[/MEMORY_PANEL]` 会分别迁移为原生状态组件和回忆书签。带 Regex replacement 的预设只要求模型返回动态字段，由 replacement 负责生成外壳；只有提示词模板、没有可复用 Regex 的预设则允许模型按模板返回一次完整 HTML/CSS。状态解析只读取明确的 `<status>`、状态标记、`data-*` 字段或 `application/json`，不再从整条正文猜测字段；单个值会被压缩为短状态，避免整篇小说进入一个格子。
 
 ## 独立世界书与预设
 
@@ -66,13 +66,13 @@ v0.2 支持：
 - 支持把独立 `promptOnly` Regex JSON 导入为请求前历史过滤器；过滤只作用于发送给模型的上下文副本，不改写本地聊天原文；
 - 导入独立 `promptOnly` Regex 时，如果已经启用写作预设，规则会合并到当前预设而不是替换它；同一查找与替换规则会自动去重；
 - Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、HTML/CSS 隔离开关、小剧场主题、原生组件和 Regex 配置；
-- 当预设提示词或 Regex replacement 已定义 HTML/CSS、状态栏或 UI 模板时，模型上下文与显示层都会优先遵守该格式；
+- 当预设提示词或 Regex replacement 已定义 HTML/CSS、状态栏或 UI 模板时，模型上下文与显示层都会优先遵守该格式；仅在受限 sandbox 内支持模板自带的局部 JavaScript 交互；
 - 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 - 小剧场支持 `:::theater`、HTML fenced block 以及常见的 `<snow><details><summary>…` 包装；标题、正文和 fenced HTML 会作为同一张小剧场卡片处理；
 - 支持 `{{random::选项一::选项二}}` 与 `{{random:选项一,选项二}}` 随机宏，并在同一次上下文编译中保持结果稳定；
 - 只有预设或角色提示词明确包含状态栏/组件协议时才会要求模型生成原生组件；启用渲染开关本身不会凭空增加状态栏；
 
-复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex 和消息级隔离 CSS，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
+复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex、消息级隔离 CSS 与 sandbox 内局部交互，但不允许模板访问 Lunemir 主页、外部 API 或跨消息数据，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 
 ## 本地数据
 
