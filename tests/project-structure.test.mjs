@@ -363,12 +363,18 @@ test("renders preset HTML and CSS in an isolated layer without executing importe
   assert.match(importer, /normalizeImportedOutputRenderer/);
   assert.match(importer, /normalizeImportedPromptFilters/);
   assert.match(importer, /raw\.findRegex/);
+  assert.match(importer, /isPromptFilterOnlyPreset/);
   assert.match(prototype, /查看原文/);
+  assert.match(prototype, /合并到当前预设/);
   assert.match(prototype, /达到输出上限/);
   assert.match(runtime, /finishReason/);
   assert.match(context, /当前角色卡或预设已经带有专属的状态栏\/Regex 后处理器/);
   assert.match(context, /applyPromptFilters/);
   assert.match(context, /replaceRandomMacros/);
+  assert.match(context, /nativeWidgetRequested/);
+  assert.match(context, /snowTheaterProtocol/);
+  assert.doesNotMatch(context, /preset\?\.outputRenderer\?\.enabled && rendererConfig\.widgets/);
+  assert.match(runtime, /mergeIntoActivePreset/);
   assert.match(context, /原生组件回退协议/);
 });
 
@@ -619,4 +625,15 @@ test("prioritizes character-card renderers without corrupting story paragraphs",
   assert.match(component, /\.lm-preset-root content\{display:block;white-space:pre-wrap/);
   assert.match(component, /useIsolatedRenderer/);
   assert.match(styles, /character-renderer-toggle/);
+});
+
+test("resolves imported theater random macros deterministically", async () => {
+  const { replaceRandomMacros } = await import(new URL("lib/lunemir/macros.ts", root));
+  const source = "{{random::微信聊天界面::论坛页面::手写信}} / {{random:晴天,雨天,雪天}}";
+  const first = replaceRandomMacros(source, "story-001");
+  const second = replaceRandomMacros(source, "story-001");
+  assert.equal(first, second);
+  assert.doesNotMatch(first, /\{\{\s*random/i);
+  assert.match(first, /微信聊天界面|论坛页面|手写信/);
+  assert.match(first, /晴天|雨天|雪天/);
 });

@@ -501,8 +501,16 @@ export function LunemirPrototype() {
   const importAvatar = runtime.importPreview?.kind === "character"
     ? runtime.importPreview.record.avatarDataUrl
     : undefined;
+  const mergesPromptFilter = runtime.importPreview?.kind === "preset"
+    && Boolean(runtime.importPreview.record.promptFilters?.length)
+    && (runtime.importPreview.record.modules?.length ?? 0) === 0
+    && Object.keys(runtime.importPreview.record.modelPatch).length === 0
+    && (runtime.importPreview.record.outputRenderer?.regexRules.length ?? 0) === 0
+    && Boolean(runtime.activePreset);
   const importAction = runtime.importPreview
-    ? ({ character: "导入角色", lorebook: "导入并启用", preset: "导入并应用" } as const)[runtime.importPreview.kind]
+    ? mergesPromptFilter
+      ? "合并到当前预设"
+      : ({ character: "导入角色", lorebook: "导入并启用", preset: "导入并应用" } as const)[runtime.importPreview.kind]
     : "确认导入";
 
   if (!runtime.ready) {

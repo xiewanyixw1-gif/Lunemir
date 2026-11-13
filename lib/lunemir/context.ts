@@ -161,6 +161,7 @@ export function compileContext(
   const resolvedPreset = resolvePresetPrompts(preset);
   const presetPrompt = replaceMacros(resolvedPreset.systemPrompt);
   const presetPostHistory = replaceMacros(resolvedPreset.postHistoryInstructions);
+  const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
   const resolvedOutputRenderer = resolveOutputRendererConfig(
     preset?.outputRenderer,
     character.extensions,
@@ -172,11 +173,15 @@ export function compileContext(
     `${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`,
   );
   const rendererProvidesTemplate = presetUsesCustomPresentation(rendererConfig);
+  const nativeWidgetRequested = /:::status\b|:::widget\b|<lunemir-(?:status|widget)\b|\[(?:UI_PANEL|STATUS_PANEL)\]/i
+    .test(`${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}`);
+  const snowTheaterRequested = /<snow(?:\s|>)|<snow_rules\b/i
+    .test(`${presetPrompt}\n${presetPostHistory}\n${character.systemPrompt}\n${loreText}`);
   const outputProtocol = rendererProvidesTemplate
     ? `输出呈现规则：当前角色卡或预设已经带有专属的状态栏/Regex 后处理器。你只需要输出它要求的动态字段、占位标记和剧情正文；CSS、<style>、完整 HTML 模板与样式说明属于渲染资源，禁止在回复中复述、解释或改写。不要额外输出 Lunemir 的 :::status / :::widget，也不要再生成第二套状态栏。正文必须保持正常段落结构，并放在专属模板规定的正文区域。若旧模板原本依赖脚本填充，请在同一回复中保留模板要求的最终状态键值（如时间、地点、天气、情绪、动作），不得只留下“正在渲染/加载”等等待文案。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
     : hasCustomPresentation
       ? `输出呈现规则：当前角色卡或预设在提示词中定义了专属状态栏或 HTML/CSS 格式，但没有可由程序复用的 Regex 模板。请严格按照其中规定的完整 HTML 结构输出一次，不要改写成 Lunemir 的 :::status / :::widget，也不要同时生成第二套状态栏。需要的 <style> 可以随该 HTML 输出一次，不要把 CSS 当作解释性正文，不要使用 Markdown 代码围栏包裹 HTML。小说正文必须保持正常段落和空行，并放在模板指定的 content、正文或主内容区域。不要输出“正在渲染/加载”等依赖脚本替换的等待占位文案，直接填写最终静态内容。不要输出 JavaScript、事件处理器、表单或外部网络资源。`
-    : preset?.outputRenderer?.enabled && rendererConfig.widgets
+    : nativeWidgetRequested && rendererConfig.widgets
       ? `Lunemir 原生组件回退协议：只有当当前预设明确要求状态栏或小组件、但没有规定自己的输出模板时，才使用下面的纯文本格式：
 :::status 状态栏标题
 时间：当前剧情时间
@@ -185,7 +190,9 @@ export function compileContext(
 :::
 其他键值组件可使用 :::widget 标题 开始，并用 ::: 结束。正文仍写在组件之外。角色卡或预设没有要求组件时，不要额外生成状态栏。`
         : "";
-  const loreText = matchedLore.map(({ entry, content }) => `[${entry.name}]\n${replaceMacros(content)}`).join("\n\n");
+  const snowTheaterProtocol = snowTheaterRequested
+    ? "Lunemir 小剧场兼容协议：严格遵守已启用小剧场规则规定的 <snow>、<details>、<summary> 与内容顺序。若规则要求 HTML fenced block，必须把完整 HTML/CSS 放在该围栏内；若规则要求纯文字，则不要擅自添加代码。不要把 CSS、标签说明或设计过程散落到小说正文中。Lunemir 不执行 JavaScript、表单或外部网络资源，因此交互型小剧场应同时给出无需脚本即可阅读的完整初始画面，并优先用安全 HTML/CSS 呈现。小说正文保持在 <snow> 小剧场之外。"
+    : "";
   const memoryText = (options.memories ?? []).filter(Boolean).map((memory) => `- ${replaceMacros(memory)}`).join("\n");
   const summaryText = options.storySummary?.status === "confirmed" ? replaceMacros(options.storySummary.content.trim()) : "";
   const authorNoteActive = Boolean(
@@ -206,7 +213,7 @@ export function compileContext(
     .filter(Boolean)
     .map((value) => replaceMacros(value ?? ""))
     .join("\n\n");
-  const systemContent = [presetPrompt, outputProtocol, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
+  const systemContent = [presetPrompt, outputProtocol, snowTheaterProtocol, characterDefinition, personaDefinition, storyStateText && `统一剧情状态：\n${storyStateText}\n主聊天与手机事件必须使用这一时间、地点和场景，不得自行制造冲突。`, summaryText && `已经确认的剧情摘要：\n${summaryText}`, loreText && `相关世界设定：\n${loreText}`, memoryText && `已经确认的长期记忆：\n${memoryText}`, phoneText && `同一剧情中已确认的手机通信事件：\n${phoneText}\n这些事件已经真实发生，继续剧情时必须保持一致。`, options.authorNote?.position === "system" ? authorNoteText && `作者注释：\n${authorNoteText}` : ""]
     .filter(Boolean)
     .join("\n\n---\n\n");
   const coveredMessageCount = summaryText ? Math.min(messages.length, options.storySummary?.coveredMessageCount ?? 0) : 0;

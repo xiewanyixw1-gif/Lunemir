@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { readCharacterGreetings } from "../../lib/lunemir/character-import";
-import { parseContentFile } from "../../lib/lunemir/content-import";
+import { isPromptFilterOnlyPreset, parseContentFile } from "../../lib/lunemir/content-import";
 import { compileContext, estimateTokens } from "../../lib/lunemir/context";
 import { createDefaultPersona, createId, createSampleCharacter, DEFAULT_APPEARANCE, DEFAULT_IMAGE_MODEL_CONFIG, DEFAULT_MODEL_CONFIG } from "../../lib/lunemir/defaults";
 import { generateChatCompletion, generateImage as requestGeneratedImage, streamChatCompletion, testModelConnection } from "../../lib/lunemir/model-client";
@@ -1564,16 +1564,29 @@ export function useLunemirRuntime() {
         if (activeCharacter) refreshContext(activeCharacter, messages);
       }
       if (importPreview.kind === "preset") {
-        await savePreset(importPreview.record);
-        setPresets([importPreview.record, ...presets]);
-        setActivePresetId(importPreview.record.id);
-        contextResourcesRef.current.preset = importPreview.record;
-        const nextModel = { ...modelConfig, ...importPreview.record.modelPatch };
+        const mergeIntoActivePreset = isPromptFilterOnlyPreset(importPreview.record) ? activePreset : null;
+        const importedPreset = mergeIntoActivePreset
+          ? {
+              ...mergeIntoActivePreset,
+              promptFilters: Array.from(new Map([
+                ...(mergeIntoActivePreset.promptFilters ?? []),
+                ...(importPreview.record.promptFilters ?? []),
+              ].map((rule) => [`${rule.pattern}\u0000${rule.replacement}`, { ...rule }])).values()),
+              updatedAt: new Date().toISOString(),
+            }
+          : importPreview.record;
+        await savePreset(importedPreset);
+        setPresets(mergeIntoActivePreset
+          ? presets.map((preset) => preset.id === importedPreset.id ? importedPreset : preset)
+          : [importedPreset, ...presets]);
+        setActivePresetId(importedPreset.id);
+        contextResourcesRef.current.preset = importedPreset;
+        const nextModel = { ...modelConfig, ...importedPreset.modelPatch };
         contextLimitRef.current = nextModel.contextLimit;
         const settings = await getSettings();
         await saveSettings({
           ...settings,
-          activePresetId: importPreview.record.id,
+          activePresetId: importedPreset.id,
           updatedAt: new Date().toISOString(),
         });
         if (activeCharacter) refreshContext(activeCharacter, messages);

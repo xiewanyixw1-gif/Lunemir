@@ -64,11 +64,13 @@ v0.2 支持：
 - Lunemir 导出使用 `lunemir_position` 保存模块插入位置，其他应用可以安全忽略该扩展字段；
 - 识别常见 `regex_scripts` / `regexScripts` 数组中的 AI 输出替换规则，并保留规则开关；
 - 支持把独立 `promptOnly` Regex JSON 导入为请求前历史过滤器；过滤只作用于发送给模型的上下文副本，不改写本地聊天原文；
+- 导入独立 `promptOnly` Regex 时，如果已经启用写作预设，规则会合并到当前预设而不是替换它；同一查找与替换规则会自动去重；
 - Lunemir 原生预设使用 `lunemir_output_renderer` 保存 Markdown、HTML/CSS 隔离开关、小剧场主题、原生组件和 Regex 配置；
 - 当预设提示词或 Regex replacement 已定义 HTML/CSS、状态栏或 UI 模板时，模型上下文与显示层都会优先遵守该格式；
 - 状态栏支持 `:::status 标题` / `:::`，通用组件支持 `:::widget 标题` / `:::`；也会安全转换 `lunemir-status`、`lunemir-widget` 及少量常见状态标签；
 - 小剧场支持 `:::theater`、HTML fenced block 以及常见的 `<snow><details><summary>…` 包装；标题、正文和 fenced HTML 会作为同一张小剧场卡片处理；
 - 支持 `{{random::选项一::选项二}}` 与 `{{random:选项一,选项二}}` 随机宏，并在同一次上下文编译中保持结果稳定；
+- 只有预设或角色提示词明确包含状态栏/组件协议时才会要求模型生成原生组件；启用渲染开关本身不会凭空增加状态栏；
 
 复杂世界书能力如正则关键词、递归激活、概率、包含组、插入深度和 Outlet 会保留在原始数据中，但当前上下文编译器尚未执行这些高级规则。预设当前执行独立模块启停、位置、优先级与顺序；输出层支持安全 Markdown、小剧场、原生状态组件、受约束 Regex 和消息级隔离 CSS，但不会执行导入预设中的 JavaScript、全局 CSS 或网络资源，也尚不支持多预设组合。世界书行为参考 [SillyTavern World Info 文档](https://github.com/SillyTavern/SillyTavern-Docs/blob/main/Usage/worldinfo.md)，预设字段参考 [SillyTavern 默认 Chat Completion 预设](https://github.com/SillyTavern/SillyTavern/blob/release/default/content/presets/openai/Default.json)。
 

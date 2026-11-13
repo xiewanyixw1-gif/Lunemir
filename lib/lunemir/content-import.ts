@@ -127,6 +127,15 @@ function normalizePreset(raw: UnknownRecord, sourceName: string): ContentImportP
   };
 }
 
+export function isPromptFilterOnlyPreset(preset: PresetRecord) {
+  return Boolean(
+    preset.promptFilters?.length
+    && (preset.modules?.length ?? 0) === 0
+    && Object.keys(preset.modelPatch).length === 0
+    && (preset.outputRenderer?.regexRules.length ?? 0) === 0,
+  );
+}
+
 export async function parseContentFile(file: File): Promise<ContentImportPreview> {
   if (file.size > 20 * 1024 * 1024) {
     throw new Error("文件超过 20 MB，请移除过大的内嵌资源后重试。");
